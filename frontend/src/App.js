@@ -1,53 +1,136 @@
-import { useEffect } from "react";
-import "./App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Import components
+import Welcome from './components/Welcome';
+import Login from './components/Login';
+import CitizenDashboard from './components/CitizenDashboard';
+import ReportIssue from './components/ReportIssue';
+import MyReports from './components/MyReports';
+import NearbyIssues from './components/NearbyIssues';
+import AdminLogin from './components/AdminLogin';
+import AdminDashboard from './components/AdminDashboard';
+import IssueDetail from './components/IssueDetail';
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
+// Language Context
+export const LanguageContext = React.createContext();
+
+function App() {
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check if user is logged in on app start
+  useEffect(() => {
+    const savedUser = localStorage.getItem('civicconnect_user');
+    const savedAdmin = localStorage.getItem('civicconnect_admin');
+    
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+    if (savedAdmin) {
+      setIsAdmin(true);
+      setUser(JSON.parse(savedAdmin));
+    }
+  }, []);
+
+  const languageData = {
+    en: {
+      welcome: 'Welcome to CivicConnect',
+      getStarted: 'Get Started',
+      reportIssue: 'Report Issue',
+      myReports: 'My Reports',
+      nearbyIssues: 'Nearby Issues',
+      login: 'Login',
+      register: 'Register',
+      adminLogin: 'Admin Login',
+      dashboard: 'Dashboard',
+      hello: 'Hello, Report your issue today!',
+      selectLanguage: 'Select Language'
+    },
+    hi: {
+      welcome: 'CivicConnect में आपका स्वागत है',
+      getStarted: 'शुरू करें',
+      reportIssue: 'समस्या रिपोर्ट करें',
+      myReports: 'मेरी रिपोर्ट्स',
+      nearbyIssues: 'आसपास की समस्याएं',
+      login: 'लॉगिन',
+      register: 'रजिस्टर करें',
+      adminLogin: 'एडमिन लॉगिन',
+      dashboard: 'डैशबोर्ड',
+      hello: 'हैलो, आज अपनी समस्या रिपोर्ट करें!',
+      selectLanguage: 'भाषा चुनें'
+    },
+    sat: {
+      welcome: 'CivicConnect ᱨᱮ ᱥᱟᱨᱦᱟᱣ',
+      getStarted: 'ᱮᱛᱦᱚᱵ ᱢᱮ',
+      reportIssue: 'ᱵᱟᱝ ᱠᱟᱹᱢᱤ ᱠᱷᱚᱵᱚᱨ ᱢᱮ',
+      myReports: 'ᱤᱧᱟᱜ ᱠᱷᱚᱵᱚᱨ ᱠᱚ',
+      nearbyIssues: 'ᱥᱩᱨ ᱨᱮᱱᱟᱜ ᱵᱟᱝ ᱠᱟᱹᱢᱤ',
+      login: 'ᱵᱚᱞᱚ ᱫᱚᱦᱚ',
+      register: 'ᱧᱩᱛᱩᱢ ᱚᱞ',
+      adminLogin: 'ᱮᱰᱢᱤᱱ ᱵᱚᱞᱚ',
+      dashboard: 'ᱰᱮᱥᱵᱚᱰ',
+      hello: 'ᱡᱚᱦᱟᱨ, ᱛᱤᱱᱟᱹᱜ ᱫᱤᱱ ᱟᱢᱟᱜ ᱵᱟᱝ ᱠᱟᱹᱢᱤ ᱠᱷᱚᱵᱚᱨ ᱢᱮ!',
+      selectLanguage: 'ᱯᱟᱹᱨᱥᱤ ᱵᱟᱪᱷᱟᱣ ᱢᱮ'
+    },
+    nag: {
+      welcome: 'CivicConnect में आपका स्वागत है',
+      getStarted: 'शुरू करीं',
+      reportIssue: 'समस्या रिपोर्ट करीं',
+      myReports: 'हमार रिपोर्ट सब',
+      nearbyIssues: 'आसपास के समस्या',
+      login: 'लॉगिन',
+      register: 'रजिस्टर करीं',
+      adminLogin: 'एडमिन लॉगिन',
+      dashboard: 'डैशबोर्ड',
+      hello: 'नमस्कार, आज अपन समस्या रिपोर्ट करीं!',
+      selectLanguage: 'भाषा चुनीं'
     }
   };
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <LanguageContext.Provider value={{
+      currentLanguage,
+      setCurrentLanguage,
+      t: (key) => languageData[currentLanguage][key] || languageData.en[key]
+    }}>
+      <div className="App">
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Welcome />} />
+            <Route path="/login" element={<Login setUser={setUser} />} />
+            <Route path="/admin-login" element={<AdminLogin setUser={setUser} setIsAdmin={setIsAdmin} />} />
+            
+            {/* Citizen Routes */}
+            <Route path="/citizen" element={
+              user && !isAdmin ? <CitizenDashboard user={user} /> : <Navigate to="/login" />
+            } />
+            <Route path="/report-issue" element={
+              user && !isAdmin ? <ReportIssue user={user} /> : <Navigate to="/login" />
+            } />
+            <Route path="/my-reports" element={
+              user && !isAdmin ? <MyReports user={user} /> : <Navigate to="/login" />
+            } />
+            <Route path="/nearby-issues" element={
+              user && !isAdmin ? <NearbyIssues user={user} /> : <Navigate to="/login" />
+            } />
+            <Route path="/issue/:id" element={
+              user ? <IssueDetail user={user} isAdmin={isAdmin} /> : <Navigate to="/login" />
+            } />
+            
+            {/* Admin Routes */}
+            <Route path="/admin" element={
+              user && isAdmin ? <AdminDashboard user={user} /> : <Navigate to="/admin-login" />
+            } />
+            
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </BrowserRouter>
+      </div>
+    </LanguageContext.Provider>
   );
 }
 
