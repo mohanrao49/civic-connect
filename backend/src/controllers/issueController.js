@@ -159,10 +159,17 @@ class IssueController {
         if (bodyImages) {
           const parsed = typeof bodyImages === 'string' ? JSON.parse(bodyImages) : bodyImages;
           if (Array.isArray(parsed)) {
-            images = parsed.map((img) => {
-              if (typeof img === 'string') return { url: img };
-              return { url: img.url, publicId: img.publicId, caption: img.caption };
-            }).filter((i) => i && i.url);
+            images = parsed
+              .map((img) => {
+                if (typeof img === 'string') {
+                  return { url: img };
+                }
+                const url = img.url || img.secure_url || img.secureUrl || null;
+                const publicId = img.publicId || img.public_id || null;
+                if (!url) return null;
+                return { url, publicId, caption: img.caption };
+              })
+              .filter((i) => i && i.url);
           }
         }
       } catch (_) { /* ignore malformed images */ }
@@ -238,6 +245,11 @@ class IssueController {
       if (tags) issue.tags = tags;
 
       await issue.save();
+
+      // If status changed to resolved, notify reporter and admins
+      if (issue.status === 'resolved') {
+        await notificationService.notifyIssueResolved(issue, req.user);
+      }
 
       res.json({
         success: true,

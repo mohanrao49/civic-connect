@@ -1,4 +1,5 @@
 import React, { useState, useContext } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, Link } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import { ArrowLeft, IdCard, Key } from 'lucide-react';
@@ -15,7 +16,7 @@ const Login = ({ setUser, setIsAdmin }) => {
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (aadhaar.length !== 12) {
-      alert('Please enter a valid 12-digit Aadhaar number');
+      toast.warning('Please enter a valid 12-digit Aadhaar number');
       return;
     }
 
@@ -26,12 +27,18 @@ const Login = ({ setUser, setIsAdmin }) => {
       
       // In development mode, show the OTP
       if (response.data && response.data.otp) {
-        alert(`OTP sent to your phone. Development OTP: ${response.data.otp}`);
+        toast.success(`OTP sent. Dev OTP: ${response.data.otp}`);
       } else {
-        alert('OTP sent to your phone');
+        toast.success('OTP sent to your phone');
       }
     } catch (error) {
-      alert(`Error: ${error.message}`);
+      if (error.message.includes('Please register before proceeding')) {
+        toast.error('This Aadhaar number is not registered. Please register first before logging in.');
+        // Optionally redirect to registration page
+        // navigate('/register');
+      } else {
+        toast.error(`Error: ${error.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -40,7 +47,7 @@ const Login = ({ setUser, setIsAdmin }) => {
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     if (otp.length !== 6) {
-      alert('Please enter a valid 6-digit OTP');
+      toast.warning('Please enter a valid 6-digit OTP');
       return;
     }
 
@@ -64,7 +71,7 @@ const Login = ({ setUser, setIsAdmin }) => {
       }
       navigate('/citizen');
     } catch (error) {
-      alert(`Error: ${error.message}`);
+      toast.error(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
     }

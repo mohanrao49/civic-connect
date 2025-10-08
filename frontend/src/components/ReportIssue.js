@@ -1,4 +1,5 @@
 import React, { useState, useContext, useRef } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import { ArrowLeft, Camera, Mic, Type, MapPin, Upload } from 'lucide-react';
@@ -26,7 +27,7 @@ const ReportIssue = ({ user }) => {
   const ensureSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Try Chrome.');
+      toast.error('Speech recognition is not supported in this browser. Try Chrome.');
       return null;
     }
     if (!recognitionRef.current) {
@@ -107,6 +108,15 @@ const ReportIssue = ({ user }) => {
     }
   };
 
+  const handleRemoveImage = () => {
+    setSelectedFile(null);
+    // Reset the file input
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
   const handleGetLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -150,25 +160,29 @@ const ReportIssue = ({ user }) => {
       // Upload image if selected
       if (selectedFile) {
         const uploadResponse = await apiService.uploadImage(selectedFile);
-        imageUrl = uploadResponse.url;
+        // Support both our backend shape { success, data: { url, publicId } }
+        // and any direct shape { url, secure_url, public_id }
+        const uploaded = uploadResponse?.data || uploadResponse || {};
+        imageUrl = uploaded.url || uploaded.secure_url || null;
+        var uploadedPublicId = uploaded.publicId || uploaded.public_id || null;
       }
 
       // Validate required fields
       if (!reportData.coordinates || !reportData.coordinates[0] || !reportData.coordinates[1]) {
-        alert('Please get your location first');
+        toast.error('Please get your location first');
         setIsSubmitting(false);
         return;
       }
 
       // Validate field lengths
       if (reportData.title.length < 5) {
-        alert('Title must be at least 5 characters long');
+        toast.warning('Title must be at least 5 characters long');
         setIsSubmitting(false);
         return;
       }
 
       if (reportData.description.length < 10) {
-        alert('Description must be at least 10 characters long');
+        toast.warning('Description must be at least 10 characters long');
         setIsSubmitting(false);
         return;
       }
@@ -187,7 +201,7 @@ const ReportIssue = ({ user }) => {
         },
         images: imageUrl ? [{
           url: imageUrl,
-          publicId: imageUrl.split('/').pop(), // Extract filename as publicId
+          publicId: uploadedPublicId || imageUrl.split('/').pop(),
           caption: 'Issue image'
         }] : []
       };
@@ -198,17 +212,41 @@ const ReportIssue = ({ user }) => {
       console.log('Coordinates:', issueData.location.coordinates);
       console.log('User data:', user);
       
-      // Submit to backend
+      // 1) Validate with ML backend first
+      const mlPayload = {
+        report_id: `${Date.now()}`,
+        description: reportData.description,
+        category: reportData.category,
+        user_id: user?._id || user?.id || 'anon',
+        image_url: imageUrl || null
+      };
+
+      const mlResult = await apiService.validateReportWithML(mlPayload);
+      console.log('ML validation result:', mlResult);
+
+      if (mlResult.status !== 'accepted') {
+        setIsSubmitting(false);
+        const reason = mlResult.reason || 'Report rejected by validator';
+        toast.error(`Report rejected: ${reason}`);
+        return;
+      }
+
+      // 2) Submit to backend only if accepted
+      // Optionally map ML priority to backend priority if provided
+      if (mlResult.priority) {
+        issueData.priority = mlResult.priority === 'urgent' ? 'urgent' : 'medium';
+      }
+
       const response = await apiService.createIssue(issueData);
       
       setIsSubmitting(false);
-      alert('Issue reported successfully!');
+      toast.success('Issue reported successfully!');
       navigate('/citizen');
     } catch (error) {
       setIsSubmitting(false);
       console.error('Issue creation error:', error);
       console.error('Issue data sent:', issueData);
-      alert(`Error: ${error.message}`);
+      toast.error(`Error: ${error.message}`);
     }
   };
 
@@ -300,13 +338,33 @@ const ReportIssue = ({ user }) => {
               />
               
               {selectedFile ? (
-                <div>
+                <div style={{ position: 'relative' }}>
                   <img 
                     src={URL.createObjectURL(selectedFile)} 
                     alt="Preview"
                     className="uploaded-image"
                   />
-                  <p className="upload-text">Click to change image</p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <p className="upload-text">Click to change image</p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveImage();
+                      }}
+                      style={{
+                        background: '#dc2626',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div>

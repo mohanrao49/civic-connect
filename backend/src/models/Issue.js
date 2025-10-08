@@ -111,6 +111,20 @@ const issueSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  resolved: {
+    photo: {
+      url: String,
+      publicId: String
+    },
+    location: {
+      latitude: Number,
+      longitude: Number
+    },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
   documents: [{
     url: {
       type: String,

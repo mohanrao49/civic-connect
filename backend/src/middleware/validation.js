@@ -288,6 +288,7 @@ const validateFileUpload = [
 // Admin validation
 const validateAdminAssignment = [
   body('assignedTo')
+    .optional()
     .isMongoId()
     .withMessage('Invalid assigned user ID'),
   

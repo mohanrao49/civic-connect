@@ -56,10 +56,10 @@ class AdminController {
         ])
       ]);
 
-      // Calculate SLA breaches (issues older than 7 days and not resolved)
+      // Calculate SLA breaches (issues older than 5 days and not resolved)
       const slaBreaches = await Issue.countDocuments({
         status: { $in: ['reported', 'in-progress'] },
-        createdAt: { $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        createdAt: { $lt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) }
       });
 
       // Calculate average resolution time
@@ -293,16 +293,39 @@ class AdminController {
         });
       }
 
-      const assignedUser = await User.findById(assignedTo);
-      if (!assignedUser) {
-        return res.status(404).json({
-          success: false,
-          message: 'Assigned user not found'
-        });
+      let assignedUser = null;
+      if (assignedTo) {
+        assignedUser = await User.findById(assignedTo);
+        if (!assignedUser) {
+          return res.status(404).json({ success: false, message: 'Assigned user not found' });
+        }
+      } else {
+        // Auto-assign by department based on issue category
+        assignedUser = await User.findOne({ role: 'employee', isActive: true, department: issue.category }).sort({ loginCount: 1, lastLogin: -1 });
+        if (!assignedUser) {
+          // Optionally create a demo employee for this department in dev/demo mode
+          const allowDemo = process.env.ALLOW_DEMO_EMPLOYEE !== 'false';
+          if (allowDemo) {
+            const empId = `employee-${(issue.category || 'dept').toLowerCase().replace(/[^a-z]+/g, '-')}`;
+            const demo = new User({
+              name: 'Auto Employee',
+              employeeId: empId,
+              role: 'employee',
+              department: issue.category,
+              password: 'emp123',
+              isVerified: true,
+              isActive: true
+            });
+            await demo.save();
+            assignedUser = demo;
+          } else {
+            return res.status(400).json({ success: false, message: 'No active employee found for department' });
+          }
+        }
       }
 
       // Assign the issue
-      await issue.assign(assignedTo, req.user._id);
+      await issue.assign(assignedUser._id, req.user._id);
 
       // Notify the assigned user
       await notificationService.notifyIssueAssignment(issue, assignedUser, req.user);

@@ -12,7 +12,10 @@ import MyReports from './components/MyReports';
 import NearbyIssues from './components/NearbyIssues';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
+import EmployeeLogin from './components/EmployeeLogin';
+import EmployeeDashboard from './components/EmployeeDashboard';
 import IssueDetail from './components/IssueDetail';
+import ResolveIssue from './components/ResolveIssue';
 import Leaderboard from './components/Leaderboard';
 import Profile from './components/Profile';
 
@@ -106,6 +109,7 @@ function App() {
             <Route path="/login" element={<Login setUser={setUser} setIsAdmin={setIsAdmin} />} />
             <Route path="/register" element={<Register />} />
             <Route path="/admin-login" element={<AdminLogin setUser={setUser} setIsAdmin={setIsAdmin} />} />
+            <Route path="/employee-login" element={<EmployeeLogin setUser={setUser} setIsAdmin={setIsAdmin} />} />
             
             {/* Citizen Routes */}
             <Route path="/citizen" element={
@@ -133,6 +137,14 @@ function App() {
             {/* Admin Routes */}
             <Route path="/admin" element={
               user && isAdmin ? <AdminDashboard user={user} /> : <Navigate to="/admin-login" />
+            } />
+
+            {/* Employee Routes */}
+            <Route path="/employee" element={
+              user && !isAdmin ? <EmployeeDashboard user={user} /> : <Navigate to="/login" />
+            } />
+            <Route path="/employee/resolve/:id" element={
+              user && !isAdmin ? <ResolveIssue /> : <Navigate to="/login" />
             } />
             
             {/* Fallback */}

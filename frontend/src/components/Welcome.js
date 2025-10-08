@@ -68,7 +68,18 @@ const Welcome = () => {
         {t('getStarted')}
       </button>
 
-      <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+      <div style={{ marginTop: '2rem', textAlign: 'center', display: 'flex', gap: '12px', justifyContent: 'center' }}>
+        <button 
+          className="btn-secondary" 
+          onClick={() => navigate('/employee-login')}
+          style={{ 
+            background: 'rgba(255,255,255,0.2)', 
+            border: '1px solid rgba(255,255,255,0.3)',
+            color: 'white'
+          }}
+        >
+          Employee Login
+        </button>
         <button 
           className="btn-secondary" 
           onClick={() => navigate('/admin-login')}

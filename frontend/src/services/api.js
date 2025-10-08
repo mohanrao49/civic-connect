@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE || 'http://localhost:5001/api';
+const ML_BASE_URL = process.env.REACT_APP_ML_BASE || 'http://localhost:8001';
 
 class ApiService {
   constructor() {
@@ -79,6 +80,15 @@ class ApiService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
+    });
+    return this.handleResponse(response);
+  }
+
+  async employeeLogin({ employeeId, password, department }) {
+    const response = await fetch(`${this.baseURL}/auth/employee-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId, password, department })
     });
     return this.handleResponse(response);
   }
@@ -198,6 +208,33 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // Employee APIs
+  async getEmployeeIssues(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await fetch(`${this.baseURL}/employee/issues${queryString ? `?${queryString}` : ''}`, {
+      headers: this.getAuthHeaders()
+    });
+    return this.handleResponse(response);
+  }
+
+  async resolveIssue(issueId, { imageFile, latitude, longitude }) {
+    const formData = new FormData();
+    if (imageFile) formData.append('image', imageFile);
+    if (latitude) formData.append('latitude', latitude);
+    if (longitude) formData.append('longitude', longitude);
+
+    const response = await fetch(`${this.baseURL}/employee/issues/${issueId}/resolve`, {
+      method: 'PUT',
+      headers: {
+        ...(localStorage.getItem('civicconnect_token') && { 
+          Authorization: `Bearer ${localStorage.getItem('civicconnect_token')}` 
+        })
+      },
+      body: formData
+    });
+    return this.handleResponse(response);
+  }
+
   // File Upload API
   async uploadImage(file) {
     const formData = new FormData();
@@ -212,7 +249,32 @@ class ApiService {
       },
       body: formData
     });
-    return this.handleResponse(response);
+    const json = await this.handleResponse(response);
+    // Normalize to a consistent shape for caller
+    if (json && json.data && (json.data.url || json.data.secure_url)) {
+      return { 
+        success: json.success !== false,
+        data: {
+          url: json.data.url || json.data.secure_url,
+          publicId: json.data.publicId || json.data.public_id || null
+        }
+      };
+    }
+    return json;
+  }
+
+  // ML Validation API
+  async validateReportWithML(payload) {
+    const response = await fetch(`${ML_BASE_URL}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'ML service error' }));
+      throw new Error(error.message || 'ML validation failed');
+    }
+    return response.json();
   }
 
   // Notification APIs

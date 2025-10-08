@@ -36,9 +36,29 @@ const userSchema = new mongoose.Schema({
     select: false
   },
   role: {
-    type: String,
-    enum: ['citizen', 'admin', 'guest'],
-    default: 'citizen'
+  	type: String,
+  	enum: ['citizen', 'admin', 'guest', 'employee'],
+  	default: 'citizen'
+  },
+  employeeId: {
+  	type: String,
+  	unique: true,
+  	sparse: true,
+  	trim: true
+  },
+  department: {
+  	type: String,
+  	enum: [
+  	  'Road & Traffic',
+  	  'Water & Drainage',
+  	  'Electricity',
+  	  'Garbage & Sanitation',
+  	  'Street Lighting',
+  	  'Public Safety',
+  	  'Parks & Recreation',
+  	  'Other'
+  	],
+  	default: null
   },
   isVerified: {
     type: Boolean,

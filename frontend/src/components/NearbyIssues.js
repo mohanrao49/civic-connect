@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import { ArrowLeft, Map, List, Filter, ThumbsUp, MessageCircle, MapPin, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import IssueMap from './IssueMap';
 import apiService from '../services/api';
 
@@ -26,7 +27,7 @@ const NearbyIssues = ({ user }) => {
       if (issue.imageUrl) return issue.imageUrl;
       if (Array.isArray(issue.images) && issue.images.length > 0) {
         const first = issue.images[0];
-        return typeof first === 'string' ? first : (first?.url || first?.secure_url || null);
+        return typeof first === 'string' ? first : (first?.url || first?.secure_url || first?.secureUrl || null);
       }
       return null;
     } catch (_e) { return null; }
@@ -122,6 +123,7 @@ const NearbyIssues = ({ user }) => {
             [issue.location.coordinates.latitude, issue.location.coordinates.longitude] : 
             [16.0716, 77.9053], // Default coordinates if not available
           status: issue.status || 'reported',
+          priority: issue.priority || 'medium',
           upvotes: issue.upvotedBy?.length || 0,
           category: issue.category,
           timestamp: issue.createdAt || issue.timestamp,
@@ -147,72 +149,78 @@ const NearbyIssues = ({ user }) => {
   const mockIssues = [
     {
       id: '1',
-      title: 'Broken Street Light',
+      title: 'Fire Emergency',
       location: 'Near Your Location',
       coordinates: [16.0716, 77.9053],
       status: 'reported',
+      priority: 'urgent',
       upvotes: 15,
-      description: 'Street light has been broken for 3 days causing safety concerns',
-      category: 'Street Lighting',
+      description: 'Fire accident in residential area, immediate attention required',
+      category: 'Public Safety',
       timestamp: '2025-01-15T10:30:00Z',
       userId: 'other_user_1'
     },
     {
       id: '2',
-      title: 'Pothole on Main Road',
+      title: 'Broken Street Light',
       location: 'Near Your Location',
       coordinates: [16.0720, 77.9055],
       status: 'in-progress',
+      priority: 'high',
       upvotes: 28,
-      description: 'Large pothole causing traffic issues and vehicle damage',
-      category: 'Road & Traffic',
+      description: 'Street light has been broken for 3 days causing safety concerns',
+      category: 'Street Lighting',
       timestamp: '2025-01-14T14:20:00Z',
       userId: 'other_user_2'
     },
     {
       id: '3',
-      title: 'Garbage Overflow',
+      title: 'Pothole on Main Road',
       location: 'Near Your Location',
       coordinates: [16.0712, 77.9051],
       status: 'resolved',
+      priority: 'medium',
       upvotes: 42,
-      description: 'Garbage bin overflowing since Monday, causing foul smell',
-      category: 'Garbage & Sanitation',
+      description: 'Large pothole causing traffic issues and vehicle damage',
+      category: 'Road & Traffic',
       timestamp: '2025-01-13T09:15:00Z',
       userId: 'other_user_3'
     },
     {
       id: '4',
-      title: 'Water Leakage',
+      title: 'Garbage Overflow',
       location: 'Near Your Location',
       coordinates: [16.0718, 77.9057],
       status: 'reported',
+      priority: 'medium',
       upvotes: 8,
-      description: 'Water pipe leaking on footpath, creating slippery conditions',
-      category: 'Water & Drainage',
+      description: 'Garbage bin overflowing since Monday, causing foul smell',
+      category: 'Garbage & Sanitation',
       timestamp: '2025-01-16T11:45:00Z',
       userId: 'other_user_4'
     },
     {
       id: '5',
-      title: 'Traffic Signal Malfunction',
+      title: 'Water Leakage',
       location: 'Near Your Location',
       coordinates: [16.0714, 77.9054],
       status: 'in-progress',
+      priority: 'high',
       upvotes: 35,
-      description: 'Traffic signal not working properly, causing traffic jams',
-      category: 'Road & Traffic',
+      description: 'Water pipe leaking on footpath, creating slippery conditions',
+      category: 'Water & Drainage',
       timestamp: '2025-01-12T16:30:00Z',
       userId: 'other_user_5'
     },
     {
       id: '6',
-      title: 'Damaged Footpath',
+      title: 'Traffic Signal Malfunction',
       location: 'Near Your Location',
       coordinates: [16.0710, 77.9049],
       status: 'reported',
+      priority: 'urgent',
       upvotes: 12,
-      description: 'Footpath tiles are broken and uneven, making it difficult to walk',
+      description: 'Traffic signal not working properly, causing major traffic jams',
       category: 'Road & Traffic',
       timestamp: '2025-01-17T08:20:00Z',
       userId: 'other_user_6'
@@ -253,6 +261,30 @@ const NearbyIssues = ({ user }) => {
     
     const config = statusConfig[status] || statusConfig['reported'];
     return <span className={`status-badge ${config.class}`}>{config.text}</span>;
+  };
+
+  const getPriorityBadge = (priority) => {
+    const priorityConfig = {
+      'urgent': { bg: '#fee2e2', color: '#dc2626', text: 'URGENT', fontWeight: '700' },
+      'high': { bg: '#fef2f2', color: '#dc2626', text: 'High Priority' },
+      'medium': { bg: '#fef3c7', color: '#d97706', text: 'Medium Priority' },
+      'low': { bg: '#f0f9ff', color: '#2563eb', text: 'Low Priority' }
+    };
+    
+    const config = priorityConfig[priority] || priorityConfig['medium'];
+    return (
+      <span style={{
+        background: config.bg,
+        color: config.color,
+        padding: '0.2rem 0.6rem',
+        borderRadius: '12px',
+        fontSize: '0.7rem',
+        fontWeight: config.fontWeight || '500',
+        marginLeft: '0.5rem'
+      }}>
+        {config.text}
+      </span>
+    );
   };
 
   const formatDate = (dateString) => {
@@ -518,7 +550,10 @@ const NearbyIssues = ({ user }) => {
                       {formatDate(issue.timestamp)} • Category: {issue.category}
                     </div>
                   </div>
-                  {getStatusBadge(issue.status)}
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {getStatusBadge(issue.status)}
+                    {getPriorityBadge(issue.priority)}
+                  </div>
                 </div>
 
                 <div className="issue-description">
@@ -572,7 +607,7 @@ const NearbyIssues = ({ user }) => {
                     onClick={(e) => {
                       e.stopPropagation();
                       // Mock comment functionality
-                      alert('Comment functionality coming soon!');
+                      toast.info('Comment functionality coming soon!');
                     }}
                   >
                     <MessageCircle size={14} />

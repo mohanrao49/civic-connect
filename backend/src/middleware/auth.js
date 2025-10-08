@@ -67,6 +67,28 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Check if user is employee
+const requireEmployee = (req, res, next) => {
+  if (req.user.role !== 'employee') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Employee privileges required.'
+    });
+  }
+  next();
+};
+
+// Require one of roles
+const requireRoles = (roles = []) => (req, res, next) => {
+  if (!roles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Requires one of roles: ${roles.join(', ')}`
+    });
+  }
+  next();
+};
+
 // Check if user is admin or the resource owner
 const requireAdminOrOwner = (req, res, next) => {
   const resourceUserId = req.params.userId || req.body.userId || req.query.userId;
@@ -131,6 +153,8 @@ const verifyRefreshToken = (token) => {
 module.exports = {
   authenticate,
   requireAdmin,
+  requireEmployee,
+  requireRoles,
   requireAdminOrOwner,
   optionalAuth,
   generateToken,

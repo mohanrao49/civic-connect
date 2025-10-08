@@ -10,6 +10,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const issueRoutes = require('./routes/issues');
 const adminRoutes = require('./routes/admin');
+const employeeRoutes = require('./routes/employee');
 const uploadRoutes = require('./routes/upload');
 const notificationRoutes = require('./routes/notifications');
 
@@ -86,6 +87,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/employee', employeeRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 

@@ -188,21 +188,77 @@ class NotificationService {
   async notifyIssueAssignment(issue, assignedTo, assignedBy) {
     try {
       await this.createNotification({
-        user: assignedTo,
+        user: assignedTo._id || assignedTo,
         type: 'issue_assigned',
         title: 'Issue Assigned to You',
         message: `You have been assigned to issue "${issue.title}"`,
         data: {
           issueId: issue._id,
-          userId: assignedBy,
+          userId: assignedBy._id || assignedBy,
           metadata: {
             assignedBy: assignedBy.name || 'Admin'
           }
         },
         priority: 'high'
       });
+
+      // Notify reporter that issue is now in progress
+      if (issue.reportedBy) {
+        await this.createNotification({
+          user: issue.reportedBy,
+          type: 'issue_status_changed',
+          title: 'Your Issue Is In Progress',
+          message: `Your issue "${issue.title}" is now being worked on`,
+          data: {
+            issueId: issue._id,
+            metadata: { status: 'in-progress' }
+          },
+          priority: 'medium'
+        });
+      }
     } catch (error) {
       console.error('Error notifying issue assignment:', error);
+    }
+  }
+
+  // Notify issue resolved
+  async notifyIssueResolved(issue, resolvedBy) {
+    try {
+      // Notify reporter
+      if (issue.reportedBy) {
+        await this.createNotification({
+          user: issue.reportedBy,
+          type: 'issue_resolved',
+          title: 'Your Issue Has Been Resolved',
+          message: `Your issue "${issue.title}" has been marked as resolved`,
+          data: {
+            issueId: issue._id,
+            userId: resolvedBy?._id || resolvedBy,
+            metadata: {
+              resolvedAt: issue.resolvedAt
+            }
+          },
+          priority: 'high'
+        });
+      }
+
+      // Notify admins
+      const admins = await User.find({ role: 'admin', isActive: true });
+      for (const admin of admins) {
+        await this.createNotification({
+          user: admin._id,
+          type: 'issue_resolved',
+          title: 'Issue Resolved',
+          message: `Issue "${issue.title}" has been resolved`,
+          data: {
+            issueId: issue._id,
+            userId: resolvedBy?._id || resolvedBy
+          },
+          priority: 'medium'
+        });
+      }
+    } catch (error) {
+      console.error('Error notifying issue resolved:', error);
     }
   }
 

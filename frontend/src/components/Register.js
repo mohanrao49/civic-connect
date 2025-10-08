@@ -1,4 +1,5 @@
 import React, { useState, useContext } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import apiService from '../services/api';
@@ -15,7 +16,7 @@ const Register = () => {
 
   const handleUseMyLocation = async () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      toast.error('Geolocation is not supported by your browser');
       return;
     }
     navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -30,7 +31,7 @@ const Register = () => {
         setAddress(`Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}`);
       }
     }, (err) => {
-      alert('Unable to retrieve your location');
+      toast.error('Unable to retrieve your location');
       console.error(err);
     });
   };
@@ -38,17 +39,17 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (aadhaarNumber.length !== 12) {
-      alert('Please enter a valid 12-digit Aadhaar number');
+      toast.warning('Please enter a valid 12-digit Aadhaar number');
       return;
     }
     if (mobile.length !== 10) {
-      alert('Please enter a valid 10-digit mobile number');
+      toast.warning('Please enter a valid 10-digit mobile number');
       return;
     }
     setIsSubmitting(true);
     try {
       const result = await apiService.registerUser({ name, aadhaarNumber, mobile, address });
-      alert('Registered successfully');
+      toast.success('Registered successfully');
       // Optionally store token/user if returned
       if (result.data && result.data.token && result.data.user) {
         localStorage.setItem('civicconnect_user', JSON.stringify({
@@ -62,7 +63,7 @@ const Register = () => {
       }
       navigate('/login');
     } catch (error) {
-      alert(`Registration failed: ${error.message}`);
+      toast.error(`Registration failed: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }

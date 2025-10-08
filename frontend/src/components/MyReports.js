@@ -204,6 +204,21 @@ const MyReports = ({ user }) => {
                   {issue.description}
                 </div>
 
+                {issue.status === 'resolved' && issue.resolved?.photo?.url && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#059669', marginBottom: '0.5rem', fontWeight: '600' }}>
+                      ✓ Resolved with photo proof
+                    </div>
+                    <div style={{ height: 120, borderRadius: 8, overflow: 'hidden', background: '#f8fafc' }}>
+                      <img 
+                        src={issue.resolved.photo.url} 
+                        alt="Resolution proof" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ 
                   display: 'flex', 
                   justifyContent: 'space-between',

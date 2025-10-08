@@ -1,4 +1,6 @@
 import React, { useState, useContext } from 'react';
+import { toast } from 'sonner';
+import apiService from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import { ArrowLeft, User, Lock, Shield } from 'lucide-react';
@@ -12,26 +14,30 @@ const AdminLogin = ({ setUser, setIsAdmin }) => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    
-    // Simple mock admin credentials
-    if (username === 'admin' && password === 'admin123') {
-      setIsLoading(true);
-      
-      setTimeout(() => {
-        const adminUser = {
-          id: 'admin',
-          name: 'Admin User',
-          username: username,
-          role: 'administrator'
-        };
-        
-        setUser(adminUser);
-        setIsAdmin(true);
-        localStorage.setItem('civicconnect_admin', JSON.stringify(adminUser));
-        navigate('/admin');
-      }, 1000);
-    } else {
-      alert('Invalid credentials. Use username: admin, password: admin123');
+    setIsLoading(true);
+    try {
+      const resp = await apiService.adminLogin(username, password);
+      const data = resp.data || resp;
+      if (!data?.token || !data?.user) {
+        throw new Error('Invalid admin login response');
+      }
+      const adminUser = {
+        id: data.user._id || data.user.id || 'admin',
+        name: data.user.name || 'Admin User',
+        username: data.user.username || username,
+        role: data.user.role || 'admin'
+      };
+      // Persist admin session and token for auth headers
+      localStorage.setItem('civicconnect_admin', JSON.stringify(adminUser));
+      localStorage.setItem('civicconnect_token', data.token);
+      setUser(adminUser);
+      setIsAdmin(true);
+      navigate('/admin');
+      toast.success('Admin login successful');
+    } catch (err) {
+      toast.error(err.message || 'Admin login failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 

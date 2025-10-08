@@ -16,6 +16,7 @@ router.post('/send-otp', validateOTPRequest, authController.sendOTP);
 router.post('/verify-otp', validateOTPVerification, authController.verifyOTP);
 router.post('/guest', authController.guestLogin);
 router.post('/admin-login', authController.adminLogin);
+router.post('/employee-login', authController.employeeLogin);
 
 // Token refresh
 router.post('/refresh-token', authController.refreshToken);

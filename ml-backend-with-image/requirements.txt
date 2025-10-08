@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+transformers
+torch
+pillow
+requests
+imagehash
+profanity-check

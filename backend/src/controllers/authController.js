@@ -242,23 +242,11 @@ class AuthController {
       }
 
       if (!user) {
-        // For Aadhaar/Mobile OTP flow, create a new user if they don't exist
-        if (aadhaarNumber || mobile) {
-          console.log('Creating new user for identifier:', aadhaarNumber || mobile);
-          user = new User({
-            mobile: mobile,
-            aadhaarNumber: aadhaarNumber,
-            name: aadhaarNumber ? `User ${aadhaarNumber.slice(-4)}` : `User ${mobile?.slice(-4)}`,
-            isVerified: false
-          });
-          await user.save();
-          console.log('New user created with ID:', user._id);
-        } else {
-          return res.status(404).json({
-            success: false,
-            message: 'User not found'
-          });
-        }
+        // Only send OTP to registered users
+        return res.status(404).json({
+          success: false,
+          message: 'User not found. Please register before proceeding.'
+        });
       } else {
         console.log('Existing user found with ID:', user._id);
       }
@@ -596,6 +584,74 @@ class AuthController {
         message: 'Server error during admin login',
         error: error.message
       });
+    }
+  }
+
+  // Employee login
+  async employeeLogin(req, res) {
+    try {
+      const { employeeId, password, department } = req.body;
+
+      let user = await User.findOne({ employeeId }).select('+password');
+
+      // In development or when demo is allowed, auto-create a demo employee if missing
+      const allowDemo = process.env.ALLOW_DEMO_EMPLOYEE !== 'false';
+      if (!user && allowDemo) {
+        const demo = new User({
+          name: 'Demo Employee',
+          employeeId,
+          role: 'employee',
+          department: department || 'Road & Traffic',
+          password: password || 'emp123',
+          isVerified: true,
+          isActive: true
+        });
+        await demo.save();
+        user = await User.findOne({ _id: demo._id }).select('+password');
+      }
+
+      if (!user || user.role !== 'employee') {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+
+      if (!user.isActive) {
+        return res.status(401).json({ success: false, message: 'Account is deactivated' });
+      }
+
+      if (department && user.department !== department) {
+        const allowDemo = process.env.ALLOW_DEMO_EMPLOYEE !== 'false';
+        if (allowDemo) {
+          user.department = department;
+          await user.save();
+        } else {
+          return res.status(401).json({ success: false, message: 'Department mismatch' });
+        }
+      }
+
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      }
+
+      user.lastLogin = new Date();
+      user.loginCount += 1;
+      await user.save();
+
+      const token = generateToken(user._id);
+      const refreshToken = generateRefreshToken(user._id);
+
+      res.json({
+        success: true,
+        message: 'Employee login successful',
+        data: {
+          user: user.getProfile(),
+          token,
+          refreshToken
+        }
+      });
+    } catch (error) {
+      console.error('Employee login error:', error);
+      res.status(500).json({ success: false, message: 'Server error during employee login', error: error.message });
     }
   }
 }

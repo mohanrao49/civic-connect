@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -24,69 +24,130 @@ const createCustomIcon = (color) => new L.Icon({
 const redIcon = createCustomIcon('red');
 const orangeIcon = createCustomIcon('orange');
 const greenIcon = createCustomIcon('green');
+const blueIcon = createCustomIcon('blue');
 
-const IssueMap = ({ issues = null, onMarkerClick = null, center = [16.0716, 77.9053], showCenterMarker = true }) => {
-  const [mapCenter, setMapCenter] = useState(center);
+// Component to update map center when location changes
+const MapUpdater = ({ center }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (center && center.length === 2) {
+      map.setView(center, 13);
+    }
+  }, [center, map]);
+  
+  return null;
+};
+
+const IssueMap = ({ issues = null, onMarkerClick = null, center = null, showCenterMarker = true }) => {
+  const [mapCenter, setMapCenter] = useState([16.0716, 77.9053]); // Default fallback
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   
   // Debug logging
   console.log('IssueMap received issues:', issues);
   console.log('IssueMap issues type:', typeof issues);
   console.log('IssueMap issues length:', issues?.length);
-  const [mockIssues] = useState([
-    {
-      id: '1',
-      title: 'Broken Street Light',
-      location: 'Near Your Location',
-      coordinates: [16.0716, 77.9053],
-      status: 'reported',
-      upvotes: 15,
-      description: 'Street light has been broken for 3 days'
-    },
-    {
-      id: '2',
-      title: 'Pothole on Main Road',
-      location: 'Near Your Location',
-      coordinates: [16.0720, 77.9055],
-      status: 'in-progress',
-      upvotes: 28,
-      description: 'Large pothole causing traffic issues'
-    },
-    {
-      id: '3',
-      title: 'Garbage Overflow',
-      location: 'Near Your Location',
-      coordinates: [16.0712, 77.9051],
-      status: 'resolved',
-      upvotes: 42,
-      description: 'Garbage bin overflowing since Monday'
-    },
-    {
-      id: '4',
-      title: 'Water Leakage',
-      location: 'Near Your Location',
-      coordinates: [16.0718, 77.9057],
-      status: 'reported',
-      upvotes: 8,
-      description: 'Water pipe leaking on footpath'
-    },
-    {
-      id: '5',
-      title: 'Traffic Signal Malfunction',
-      location: 'Near Your Location',
-      coordinates: [16.0714, 77.9054],
-      status: 'in-progress',
-      upvotes: 35,
-      description: 'Traffic signal not working properly'
-    }
-  ]);
 
+  // Get user's current location
   useEffect(() => {
-    if (Array.isArray(center) && center.length === 2) {
+    const getCurrentLocation = () => {
+      if (!navigator.geolocation) {
+        setLocationError('Geolocation is not supported by this browser.');
+        setIsLoadingLocation(false);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const newLocation = [latitude, longitude];
+          setUserLocation(newLocation);
+          setMapCenter(newLocation);
+          setIsLoadingLocation(false);
+          console.log('User location obtained:', newLocation);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setLocationError('Unable to retrieve your location. Using default location.');
+          setIsLoadingLocation(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // 5 minutes
+        }
+      );
+    };
+
+    // If center is provided, use it; otherwise get user location
+    if (center && Array.isArray(center) && center.length === 2) {
       setMapCenter(center);
+      setUserLocation(center);
+      setIsLoadingLocation(false);
+    } else {
+      getCurrentLocation();
     }
   }, [center]);
 
-  const displayIssues = issues || mockIssues;
+  // Generate nearby issues based on user location
+  const generateNearbyIssues = (userLoc) => {
+    if (!userLoc) return [];
+    
+    const baseIssues = [
+      {
+        id: '1',
+        title: 'Broken Street Light',
+        location: 'Near Your Location',
+        coordinates: [userLoc[0] + 0.001, userLoc[1] + 0.001],
+        status: 'reported',
+        upvotes: 15,
+        description: 'Street light has been broken for 3 days'
+      },
+      {
+        id: '2',
+        title: 'Pothole on Main Road',
+        location: 'Near Your Location',
+        coordinates: [userLoc[0] + 0.002, userLoc[1] - 0.001],
+        status: 'in-progress',
+        upvotes: 28,
+        description: 'Large pothole causing traffic issues'
+      },
+      {
+        id: '3',
+        title: 'Garbage Overflow',
+        location: 'Near Your Location',
+        coordinates: [userLoc[0] - 0.001, userLoc[1] + 0.002],
+        status: 'resolved',
+        upvotes: 42,
+        description: 'Garbage bin overflowing since Monday'
+      },
+      {
+        id: '4',
+        title: 'Water Leakage',
+        location: 'Near Your Location',
+        coordinates: [userLoc[0] + 0.003, userLoc[1] + 0.001],
+        status: 'reported',
+        upvotes: 8,
+        description: 'Water pipe leaking on footpath'
+      },
+      {
+        id: '5',
+        title: 'Traffic Signal Malfunction',
+        location: 'Near Your Location',
+        coordinates: [userLoc[0] - 0.002, userLoc[1] - 0.002],
+        status: 'in-progress',
+        upvotes: 35,
+        description: 'Traffic signal not working properly'
+      }
+    ];
+    
+    return baseIssues;
+  };
+
+  // Use provided issues or generate nearby issues based on user location
+  const displayIssues = issues || (userLocation ? generateNearbyIssues(userLocation) : []);
   console.log('IssueMap displayIssues:', displayIssues);
   console.log('IssueMap displayIssues length:', displayIssues.length);
 
@@ -122,6 +183,47 @@ const IssueMap = ({ issues = null, onMarkerClick = null, center = [16.0716, 77.9
     }
   };
 
+  if (isLoadingLocation) {
+    return (
+      <div className="map-container" style={{ 
+        height: '100%', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: '#f8fafc',
+        borderRadius: '8px'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📍</div>
+          <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Getting your location...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (locationError) {
+    return (
+      <div className="map-container" style={{ 
+        height: '100%', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: '#f8fafc',
+        borderRadius: '8px'
+      }}>
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⚠️</div>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+            {locationError}
+          </p>
+          <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+            Showing default location with nearby issues
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="map-container">
       <MapContainer
@@ -130,17 +232,38 @@ const IssueMap = ({ issues = null, onMarkerClick = null, center = [16.0716, 77.9
         zoom={13}
         style={{ height: '100%', width: '100%' }}
       >
+        <MapUpdater center={mapCenter} />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
-        {/* Optional: center marker */}
-        {showCenterMarker && (
-          <Marker position={mapCenter} icon={createCustomIcon('blue')}>
-            <Popup>Center</Popup>
+        
+        {/* User location marker */}
+        {userLocation && showCenterMarker && (
+          <Marker position={userLocation} icon={blueIcon}>
+            <Popup>
+              <div style={{ minWidth: '150px', textAlign: 'center' }}>
+                <h4 style={{ 
+                  margin: '0 0 8px 0', 
+                  fontSize: '14px', 
+                  fontWeight: '600',
+                  color: '#1e293b'
+                }}>
+                  📍 Your Location
+                </h4>
+                <p style={{ 
+                  margin: '4px 0', 
+                  fontSize: '12px', 
+                  color: '#64748b' 
+                }}>
+                  {userLocation[0].toFixed(4)}, {userLocation[1].toFixed(4)}
+                </p>
+              </div>
+            </Popup>
           </Marker>
         )}
         
+        {/* Issue markers */}
         {displayIssues.map((issue) => (
           <Marker
             key={issue.id}

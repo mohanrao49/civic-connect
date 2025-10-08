@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { 
   BarChart3, 
@@ -14,78 +15,58 @@ import {
   MapPin
 } from 'lucide-react';
 import IssueMap from './IssueMap';
+import ResolutionCharts from './analytics/ResolutionCharts';
+import apiService from '../services/api';
 
 const AdminDashboard = ({ user }) => {
   const navigate = useNavigate();
   const [selectedView, setSelectedView] = useState('overview');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('priority'); // 'priority' | 'date'
   const [searchTerm, setSearchTerm] = useState('');
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const handleLogout = () => {
     localStorage.removeItem('civicconnect_admin');
     navigate('/');
   };
 
-  // Mock data for admin dashboard
-  const stats = {
-    totalIssues: 156,
-    reported: 45,
-    inProgress: 67,
-    resolved: 44,
-    slaBreaches: 8,
-    avgResolutionTime: '3.2 days'
-  };
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+        const resp = await apiService.getAdminDashboard();
+        setStats(resp.data || resp);
+      } catch (e) {
+        toast.error(`Failed to load dashboard: ${e.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const mockIssues = [
-    {
-      id: '1',
-      title: 'Broken Street Light',
-      location: 'MG Road, Bhopal',
-      coordinates: [23.2599, 77.4126],
-      status: 'reported',
-      upvotes: 15,
-      description: 'Street light has been broken for 3 days',
-      category: 'Street Lighting',
-      priority: 'high',
-      assignedTo: 'Unassigned',
-      reportedBy: 'Citizen #1234',
-      timestamp: '2025-01-18T10:30:00Z'
-    },
-    {
-      id: '2',
-      title: 'Pothole on Main Road',
-      location: 'DB City Mall Road',
-      coordinates: [23.2456, 77.4200],
-      status: 'in-progress',
-      upvotes: 28,
-      description: 'Large pothole causing traffic issues',
-      category: 'Road & Traffic',
-      priority: 'medium',
-      assignedTo: 'Ward Officer A',
-      reportedBy: 'Citizen #5678',
-      timestamp: '2025-01-15T14:20:00Z'
-    },
-    {
-      id: '3',
-      title: 'Garbage Overflow',
-      location: 'Arera Colony',
-      coordinates: [23.2300, 77.4300],
-      status: 'resolved',
-      upvotes: 42,
-      description: 'Garbage bin overflowing since Monday',
-      category: 'Garbage & Sanitation',
-      priority: 'low',
-      assignedTo: 'Sanitation Team B',
-      reportedBy: 'Citizen #9012',
-      timestamp: '2025-01-10T09:15:00Z'
-    }
-  ];
+  const recentIssues = useMemo(() => {
+    const list = stats?.recentIssues || [];
+    const weight = { urgent: 4, high: 3, medium: 2, low: 1 };
+    const unresolved = list.filter(i => i.status !== 'resolved');
+    const resolved = list.filter(i => i.status === 'resolved');
+    const unresolvedSorted = [...unresolved].sort((a, b) => (weight[b.priority] || 0) - (weight[a.priority] || 0));
+    const resolvedSorted = [...resolved].sort((a, b) => new Date(a.resolvedAt || a.updatedAt || a.createdAt) - new Date(b.resolvedAt || b.updatedAt || b.createdAt));
+    return [...unresolvedSorted, ...resolvedSorted];
+  }, [stats, sortMode]);
 
-  const filteredIssues = mockIssues.filter(issue => {
+  const filteredIssues = recentIssues.filter(issue => {
     const matchesStatus = statusFilter === 'all' || issue.status === statusFilter;
-    const matchesSearch = issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         issue.location.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
+    const locName = (issue.location?.name || issue.location || '').toLowerCase();
+    const matchesSearch = (issue.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         locName.includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'all' || (issue.category === categoryFilter);
+    return matchesStatus && matchesSearch && matchesCategory;
   });
 
   const StatCard = ({ title, value, icon: Icon, color, subtitle }) => (
@@ -105,6 +86,7 @@ const AdminDashboard = ({ user }) => {
 
   const getPriorityBadge = (priority) => {
     const priorityConfig = {
+      'urgent': { bg: '#fef2f2', color: '#dc2626', text: 'High' },
       'high': { bg: '#fef2f2', color: '#dc2626', text: 'High' },
       'medium': { bg: '#fef3c7', color: '#d97706', text: 'Medium' },
       'low': { bg: '#f0f9ff', color: '#2563eb', text: 'Low' }
@@ -137,14 +119,26 @@ const AdminDashboard = ({ user }) => {
     return <span className={`status-badge ${config.class}`}>{config.text}</span>;
   };
 
-  const handleAssignIssue = (issueId, e) => {
+  const handleAssignIssue = async (issueId, e) => {
     e.stopPropagation();
-    alert(`Assign issue ${issueId} to officer (Mock functionality)`);
+    try {
+      await apiService.assignIssue(issueId, {});
+      toast.success('Issue assigned');
+      const fresh = await apiService.getAdminDashboard();
+      setStats(fresh.data || fresh);
+    } catch (err) {
+      toast.error(`Assign failed: ${err.message}`);
+    }
   };
 
-  const handleUpdateStatus = (issueId, newStatus, e) => {
+  const handleUpdateStatus = async (issueId, newStatus, e) => {
     e.stopPropagation();
-    alert(`Update issue ${issueId} status to ${newStatus} (Mock functionality)`);
+    try {
+      await apiService.updateIssueStatus(issueId, { status: newStatus });
+      toast.success('Status updated');
+    } catch (err) {
+      toast.error(`Update failed: ${err.message}`);
+    }
   };
 
   return (
@@ -229,42 +223,42 @@ const AdminDashboard = ({ user }) => {
             <div className="stats-grid">
               <StatCard 
                 title="Total Issues" 
-                value={stats.totalIssues}
+                value={stats?.issues?.total || 0}
                 icon={AlertTriangle}
                 color="#1e4359"
                 subtitle="All time reports"
               />
               <StatCard 
                 title="Reported" 
-                value={stats.reported}
+                value={stats?.issues?.reported || 0}
                 icon={AlertTriangle}
                 color="#f59e0b"
                 subtitle="Awaiting assignment"
               />
               <StatCard 
                 title="In Progress" 
-                value={stats.inProgress}
+                value={stats?.issues?.inProgress || 0}
                 icon={Clock}
                 color="#3b82f6"
                 subtitle="Being resolved"
               />
               <StatCard 
                 title="Resolved" 
-                value={stats.resolved}
+                value={stats?.issues?.resolved || 0}
                 icon={CheckCircle}
                 color="#10b981"
                 subtitle="Successfully completed"
               />
               <StatCard 
                 title="SLA Breaches" 
-                value={stats.slaBreaches}
+                value={stats?.slaBreaches || 0}
                 icon={AlertTriangle}
                 color="#ef4444"
                 subtitle="Overdue issues"
               />
               <StatCard 
                 title="Avg Resolution Time" 
-                value={stats.avgResolutionTime}
+                value={stats?.avgResolutionTime || '0 days'}
                 icon={TrendingUp}
                 color="#8b5cf6"
                 subtitle="Current performance"
@@ -277,11 +271,11 @@ const AdminDashboard = ({ user }) => {
                 Recent Issues
               </h3>
               <div className="issues-grid">
-                {mockIssues.slice(0, 3).map((issue) => (
+                {filteredIssues.slice(0, 3).map((issue) => (
                   <div 
-                    key={issue.id} 
+                    key={issue._id || issue.id} 
                     className="issue-card"
-                    onClick={() => navigate(`/issue/${issue.id}`)}
+                    onClick={() => navigate(`/issue/${issue._id || issue.id}`)}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
                       <div>
@@ -289,11 +283,21 @@ const AdminDashboard = ({ user }) => {
                           {issue.title}
                         </h4>
                         <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.3rem' }}>
-                          📍 {issue.location}
+                          📍 {issue.location?.name || issue.location}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                          Reported by: {issue.reportedBy}
+                          Reported by: {issue.reportedBy?.name || 'Citizen'}
                         </div>
+                    {issue.images && issue.images.length > 0 && (
+                      <div style={{ marginBottom: '0.8rem', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc' }}>
+                        <img
+                          alt={issue.title}
+                          src={issue.images[0].url || issue.images[0].secure_url || issue.images[0].secureUrl}
+                          style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+                        />
+                      </div>
+                    )}
+
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'end' }}>
                         {getStatusBadge(issue.status)}
@@ -305,16 +309,28 @@ const AdminDashboard = ({ user }) => {
                       {issue.description}
                     </p>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                        Assigned to: <strong>{issue.assignedTo}</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                    Assigned to: <strong>{issue.assignedTo?.name || 'Unassigned'}</strong>
+                    {issue.resolved?.photo?.url && (
+                      <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#059669' }}>
+                        ✓ Resolved with photo proof
+                        <div style={{ marginTop: '0.3rem', height: 60, borderRadius: 4, overflow: 'hidden', background: '#f8fafc' }}>
+                          <img 
+                            src={issue.resolved.photo.url} 
+                            alt="Resolution proof" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          />
+                        </div>
                       </div>
+                    )}
+                  </div>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         {issue.status === 'reported' && (
                           <button 
                             className="btn-secondary"
                             style={{ fontSize: '0.7rem', padding: '0.3rem 0.8rem' }}
-                            onClick={(e) => handleAssignIssue(issue.id, e)}
+                            onClick={(e) => handleAssignIssue(issue._id || issue.id, e)}
                           >
                             Assign
                           </button>
@@ -323,7 +339,7 @@ const AdminDashboard = ({ user }) => {
                           <button 
                             className="btn-primary"
                             style={{ fontSize: '0.7rem', padding: '0.3rem 0.8rem' }}
-                            onClick={(e) => handleUpdateStatus(issue.id, 'resolved', e)}
+                            onClick={(e) => handleUpdateStatus(issue._id || issue.id, 'resolved', e)}
                           >
                             Mark Resolved
                           </button>
@@ -391,10 +407,47 @@ const AdminDashboard = ({ user }) => {
                   <option value="in-progress">In Progress</option>
                   <option value="resolved">Resolved</option>
                 </select>
+
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  style={{
+                    padding: '0.6rem 0.8rem',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    background: 'white'
+                  }}
+                >
+                  <option value="all">All Categories</option>
+                  <option>Road & Traffic</option>
+                  <option>Water & Drainage</option>
+                  <option>Electricity</option>
+                  <option>Garbage & Sanitation</option>
+                  <option>Street Lighting</option>
+                  <option>Public Safety</option>
+                  <option>Parks & Recreation</option>
+                  <option>Other</option>
+                </select>
+
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value)}
+                  style={{
+                    padding: '0.6rem 0.8rem',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    background: 'white'
+                  }}
+                >
+                  <option value="priority">Sort by Priority</option>
+                  <option value="date">Sort by Date</option>
+                </select>
               </div>
 
               <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
-                Showing {filteredIssues.length} of {mockIssues.length} issues
+                Showing {filteredIssues.length} of {(stats?.recentIssues || []).length} issues
               </div>
             </div>
 
@@ -419,12 +472,12 @@ const AdminDashboard = ({ user }) => {
                 <tbody>
                   {filteredIssues.map((issue) => (
                     <tr 
-                      key={issue.id}
+                      key={issue._id || issue.id}
                       style={{ 
                         borderBottom: '1px solid #f1f5f9',
                         cursor: 'pointer'
                       }}
-                      onClick={() => navigate(`/issue/${issue.id}`)}
+                      onClick={() => navigate(`/issue/${issue._id || issue.id}`)}
                     >
                       <td style={{ padding: '1rem 0.8rem' }}>
                         <div>
@@ -437,7 +490,7 @@ const AdminDashboard = ({ user }) => {
                         </div>
                       </td>
                       <td style={{ padding: '1rem 0.8rem', fontSize: '0.9rem', color: '#64748b' }}>
-                        {issue.location}
+                        {issue.location?.name || ''}
                       </td>
                       <td style={{ padding: '1rem 0.8rem' }}>
                         {getStatusBadge(issue.status)}
@@ -446,7 +499,7 @@ const AdminDashboard = ({ user }) => {
                         {getPriorityBadge(issue.priority)}
                       </td>
                       <td style={{ padding: '1rem 0.8rem', fontSize: '0.9rem', color: '#64748b' }}>
-                        {issue.assignedTo}
+                        {issue.assignedTo?.name || 'Unassigned'}
                       </td>
                       <td style={{ padding: '1rem 0.8rem' }}>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -454,7 +507,7 @@ const AdminDashboard = ({ user }) => {
                             <button 
                               className="btn-secondary"
                               style={{ fontSize: '0.7rem', padding: '0.3rem 0.6rem' }}
-                              onClick={(e) => handleAssignIssue(issue.id, e)}
+                              onClick={(e) => handleAssignIssue(issue._id || issue.id, e)}
                             >
                               Assign
                             </button>
@@ -463,7 +516,7 @@ const AdminDashboard = ({ user }) => {
                             <button 
                               className="btn-primary"
                               style={{ fontSize: '0.7rem', padding: '0.3rem 0.6rem' }}
-                              onClick={(e) => handleUpdateStatus(issue.id, 'resolved', e)}
+                              onClick={(e) => handleUpdateStatus(issue._id || issue.id, 'resolved', e)}
                             >
                               Resolve
                             </button>
@@ -484,8 +537,34 @@ const AdminDashboard = ({ user }) => {
             <h3 style={{ fontSize: '1.2rem', fontWeight: '600', marginBottom: '1rem', color: '#1e293b' }}>
               Issues Map Overview
             </h3>
+            <div style={{ 
+              background: 'white',
+              borderRadius: '12px',
+              padding: '1rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              marginBottom: '1rem'
+            }}>
+              <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                📍 Map shows your current location and nearby issues. Click on markers to view details.
+              </p>
+            </div>
             <div style={{ height: '600px' }}>
-              <IssueMap issues={mockIssues} onMarkerClick={(issue) => navigate(`/issue/${issue.id}`)} />
+              <IssueMap 
+                issues={filteredIssues.map((iss) => ({
+                  id: iss._id || iss.id,
+                  title: iss.title,
+                  location: iss.location?.name || '',
+                  coordinates: iss.location?.coordinates ? [
+                    iss.location.coordinates.latitude,
+                    iss.location.coordinates.longitude
+                  ] : null,
+                  status: iss.status,
+                  upvotes: iss.upvotedBy?.length || iss.upvotes || 0,
+                  description: iss.description
+                })).filter(i => Array.isArray(i.coordinates) && i.coordinates.length === 2)}
+                onMarkerClick={(issue) => navigate(`/issue/${issue.id}`)}
+                showCenterMarker={true}
+              />
             </div>
           </div>
         )}
@@ -497,73 +576,7 @@ const AdminDashboard = ({ user }) => {
               Analytics Dashboard
             </h3>
             
-            <div style={{ 
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '1.5rem'
-            }}>
-              {/* Category Distribution */}
-              <div style={{ 
-                background: 'white',
-                padding: '1.5rem',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <h4 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#1e293b' }}>
-                  Issues by Category
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                  {[
-                    { category: 'Road & Traffic', count: 45, percentage: 35 },
-                    { category: 'Street Lighting', count: 32, percentage: 25 },
-                    { category: 'Water & Drainage', count: 28, percentage: 22 },
-                    { category: 'Garbage & Sanitation', count: 23, percentage: 18 }
-                  ].map((item) => (
-                    <div key={item.category}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                        <span style={{ fontSize: '0.9rem', color: '#64748b' }}>{item.category}</span>
-                        <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e293b' }}>{item.count}</span>
-                      </div>
-              <div style={{ 
-                        width: '100%', 
-                        height: '6px', 
-                        background: '#f1f5f9', 
-                        borderRadius: '3px',
-                        overflow: 'hidden'
-                      }}>
-                <div style={{ 
-                          width: `${item.percentage}%`, 
-                          height: '100%', 
-                  background: '#1e4359',
-                          transition: 'width 0.5s ease'
-                        }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Resolution Trends */}
-              <div style={{ 
-                background: 'white',
-                padding: '1.5rem',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <h4 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#1e293b' }}>
-                  Resolution Trends (Last 7 Days)
-                </h4>
-                <div style={{ textAlign: 'center', padding: '2rem' }}>
-                  <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📊</div>
-                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
-                    Chart visualization would be implemented with a charting library like Chart.js or Recharts
-                  </p>
-                  <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-                    Mock Data: 85% resolution rate this week
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ResolutionCharts />
           </div>
         )}
       </div>

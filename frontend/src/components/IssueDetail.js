@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LanguageContext } from '../App';
 import { 
@@ -37,7 +38,7 @@ const IssueDetail = ({ user, isAdmin }) => {
       if (!rawIssue) throw new Error('Issue not found');
 
       const firstImage = Array.isArray(rawIssue.images) && rawIssue.images.length > 0 ? rawIssue.images[0] : null;
-      const imageUrl = (firstImage && (firstImage.url || firstImage.secure_url || (typeof firstImage === 'string' ? firstImage : null))) || rawIssue.image || rawIssue.imageUrl || null;
+      const imageUrl = (firstImage && (firstImage.url || firstImage.secure_url || firstImage.secureUrl || (typeof firstImage === 'string' ? firstImage : null))) || rawIssue.image || rawIssue.imageUrl || null;
 
       const mappedIssue = {
         id: rawIssue._id || rawIssue.id,
@@ -160,7 +161,7 @@ const IssueDetail = ({ user, isAdmin }) => {
       // Revert optimistic update
       setIsUpvoted(prev => !prev);
       setIssue(prev => ({ ...prev, upvotes: prev.upvotes + (isUpvoted ? 1 : -1) }));
-      alert('Failed to update upvote. Please try again.');
+      toast.error('Failed to update upvote. Please try again.');
     }
   };
 
@@ -181,20 +182,20 @@ const IssueDetail = ({ user, isAdmin }) => {
       setNewComment('');
     } catch (error) {
       console.error('Error adding comment:', error);
-      alert('Failed to add comment. Please try again.');
+      toast.error('Failed to add comment. Please try again.');
     }
   };
 
   const handleStatusUpdate = (newStatus) => {
     setIssue(prev => ({ ...prev, status: newStatus }));
-    alert(`Issue status updated to ${newStatus}`);
+    toast.success(`Issue status updated to ${newStatus}`);
   };
 
   const handleAssign = () => {
     const officer = prompt('Assign to officer:');
     if (officer) {
       setIssue(prev => ({ ...prev, assignedTo: officer, status: 'in-progress' }));
-      alert(`Issue assigned to ${officer}`);
+      toast.success(`Issue assigned to ${officer}`);
     }
   };
 
@@ -222,6 +223,7 @@ const IssueDetail = ({ user, isAdmin }) => {
 
   const getPriorityBadge = (priority) => {
     const priorityConfig = {
+      'urgent': { bg: '#fee2e2', color: '#dc2626', text: 'URGENT', fontWeight: '700' },
       'high': { bg: '#fef2f2', color: '#dc2626', text: 'High Priority' },
       'medium': { bg: '#fef3c7', color: '#d97706', text: 'Medium Priority' },
       'low': { bg: '#f0f9ff', color: '#2563eb', text: 'Low Priority' }
@@ -235,7 +237,7 @@ const IssueDetail = ({ user, isAdmin }) => {
         padding: '0.3rem 0.8rem',
         borderRadius: '15px',
         fontSize: '0.8rem',
-        fontWeight: '500'
+        fontWeight: config.fontWeight || '500'
       }}>
         {config.text}
       </span>
@@ -385,7 +387,7 @@ const IssueDetail = ({ user, isAdmin }) => {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <MapPin size={16} />
-                  <span>{issue.location}</span>
+                  <span>{issue.location?.name || 'Location not specified'}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Calendar size={16} />
@@ -393,12 +395,12 @@ const IssueDetail = ({ user, isAdmin }) => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <User size={16} />
-                  <span>Reported by: {issue.reportedBy}</span>
+                  <span>Reported by: {issue.reportedBy?.name || 'Anonymous'}</span>
                 </div>
-                {issue.assignedTo !== 'Unassigned' && (
+                {issue.assignedTo && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <Settings size={16} />
-                    <span>Assigned to: {issue.assignedTo}</span>
+                    <span>Assigned to: {issue.assignedTo?.name || 'Unassigned'}</span>
                   </div>
                 )}
               </div>
