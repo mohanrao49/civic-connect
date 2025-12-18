@@ -26,19 +26,33 @@ function App() {
   const [currentLanguage, setCurrentLanguage] = useState('en');
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Check if user is logged in on app start
   useEffect(() => {
-    const savedUser = localStorage.getItem('civicconnect_user');
-    const savedAdmin = localStorage.getItem('civicconnect_admin');
+    const checkAuth = () => {
+      try {
+        const savedUser = localStorage.getItem('civicconnect_user');
+        const savedAdmin = localStorage.getItem('civicconnect_admin');
+        const token = localStorage.getItem('civicconnect_token');
+        
+        if (savedAdmin) {
+          const adminUser = JSON.parse(savedAdmin);
+          setUser(adminUser);
+          setIsAdmin(true);
+        } else if (savedUser && token) {
+          const userData = JSON.parse(savedUser);
+          setUser(userData);
+          setIsAdmin(false);
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    if (savedAdmin) {
-      setIsAdmin(true);
-      setUser(JSON.parse(savedAdmin));
-    }
+    checkAuth();
   }, []);
 
   const languageData = {
@@ -95,6 +109,40 @@ function App() {
       selectLanguage: 'भाषा चुनीं'
     }
   };
+
+  // Show spinner while checking authentication
+  if (isLoading) {
+    return (
+      <LanguageContext.Provider value={{
+        currentLanguage,
+        setCurrentLanguage,
+        t: (key) => languageData[currentLanguage][key] || languageData.en[key]
+      }}>
+        <div className="App" style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(180deg, #123244 0%, #1e4359 28%, #3f6177 62%, #d8c7bd 100%)'
+        }}>
+          <div style={{
+            width: '50px',
+            height: '50px',
+            border: '4px solid rgba(255, 255, 255, 0.3)',
+            borderTop: '4px solid white',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </LanguageContext.Provider>
+    );
+  }
 
   return (
     <LanguageContext.Provider value={{

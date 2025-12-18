@@ -26,12 +26,14 @@ const IssueDetail = ({ user, isAdmin }) => {
   const [isUpvoted, setIsUpvoted] = useState(false);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchIssueData();
   }, [id]);
 
   const fetchIssueData = async () => {
+    setIsLoading(true);
     try {
       const issueResponse = await apiService.getIssueById(id);
       const rawIssue = issueResponse.data?.issue || issueResponse.issue || issueResponse;
@@ -70,76 +72,82 @@ const IssueDetail = ({ user, isAdmin }) => {
     } catch (error) {
       console.error('Error fetching issue data:', error);
       // Fallback to mock data
-      const mockIssues = {
-      '1': {
-        id: '1',
-        title: 'Broken Street Light',
-        location: 'MG Road, Bhopal',
-        coordinates: [23.2599, 77.4126],
-        status: 'reported',
-        upvotes: 15,
-        description: 'Street light pole is broken and hanging dangerously. This has been causing safety concerns especially during night time. Multiple citizens have complained about this issue.',
-        category: 'Street Lighting',
-        priority: 'high',
-        assignedTo: 'Unassigned',
-        reportedBy: 'Citizen #1234',
-        timestamp: '2025-01-18T10:30:00Z',
-        image: null
-      },
-      '2': {
-        id: '2',
-        title: 'Pothole on Main Road',
-        location: 'DB City Mall Road',
-        coordinates: [23.2456, 77.4200],
-        status: 'in-progress',
-        upvotes: 28,
-        description: 'Large pothole causing traffic issues and vehicle damage. The pothole is approximately 3 feet in diameter and 6 inches deep.',
-        category: 'Road & Traffic',
-        priority: 'medium',
-        assignedTo: 'Ward Officer A',
-        reportedBy: 'Citizen #5678',
-        timestamp: '2025-01-15T14:20:00Z',
-        image: null
-      },
-      'user_1': {
-        id: 'user_1',
-        title: 'Broken Street Light',
-        location: 'Near my house, MG Road',
-        coordinates: [23.2599, 77.4126],
-        status: 'in-progress',
-        upvotes: 12,
-        description: 'Street light pole is broken and hanging dangerously',
-        category: 'Street Lighting',
-        priority: 'high',
-        assignedTo: 'Electrical Department',
-        reportedBy: user.name,
-        timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        image: null
-      }
-    };
+      try {
+        const mockIssues = {
+          '1': {
+            id: '1',
+            title: 'Broken Street Light',
+            location: 'MG Road, Bhopal',
+            coordinates: [23.2599, 77.4126],
+            status: 'reported',
+            upvotes: 15,
+            description: 'Street light pole is broken and hanging dangerously. This has been causing safety concerns especially during night time. Multiple citizens have complained about this issue.',
+            category: 'Street Lighting',
+            priority: 'high',
+            assignedTo: 'Unassigned',
+            reportedBy: 'Citizen #1234',
+            timestamp: '2025-01-18T10:30:00Z',
+            image: null
+          },
+          '2': {
+            id: '2',
+            title: 'Pothole on Main Road',
+            location: 'DB City Mall Road',
+            coordinates: [23.2456, 77.4200],
+            status: 'in-progress',
+            upvotes: 28,
+            description: 'Large pothole causing traffic issues and vehicle damage. The pothole is approximately 3 feet in diameter and 6 inches deep.',
+            category: 'Road & Traffic',
+            priority: 'medium',
+            assignedTo: 'Ward Officer A',
+            reportedBy: 'Citizen #5678',
+            timestamp: '2025-01-15T14:20:00Z',
+            image: null
+          },
+          'user_1': {
+            id: 'user_1',
+            title: 'Broken Street Light',
+            location: 'Near my house, MG Road',
+            coordinates: [23.2599, 77.4126],
+            status: 'in-progress',
+            upvotes: 12,
+            description: 'Street light pole is broken and hanging dangerously',
+            category: 'Street Lighting',
+            priority: 'high',
+            assignedTo: 'Electrical Department',
+            reportedBy: user.name,
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            image: null
+          }
+        };
 
-    const foundIssue = mockIssues[id];
-    if (foundIssue) {
-      setIssue(foundIssue);
-    }
+        const foundIssue = mockIssues[id];
+        if (foundIssue) {
+          setIssue(foundIssue);
+        }
 
-    // Mock comments
-    setComments([
-      {
-        id: 1,
-        author: 'Citizen #5432',
-        content: 'This is a serious safety hazard. Please prioritize this issue.',
-        timestamp: '2025-01-18T14:30:00Z',
-        isAdmin: false
-      },
-      {
-        id: 2,
-        author: 'Ward Officer',
-        content: 'Issue has been acknowledged. We will dispatch a team tomorrow.',
-        timestamp: '2025-01-18T16:45:00Z',
-        isAdmin: true
+        // Mock comments
+        setComments([
+          {
+            id: 1,
+            author: 'Citizen #5432',
+            content: 'This is a serious safety hazard. Please prioritize this issue.',
+            timestamp: '2025-01-18T14:30:00Z',
+            isAdmin: false
+          },
+          {
+            id: 2,
+            author: 'Ward Officer',
+            content: 'Issue has been acknowledged. We will dispatch a team tomorrow.',
+            timestamp: '2025-01-18T16:45:00Z',
+            isAdmin: true
+          }
+        ]);
+      } catch (mockError) {
+        console.error('Error loading mock data:', mockError);
       }
-    ]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -270,20 +278,56 @@ const IssueDetail = ({ user, isAdmin }) => {
     return `${diffDays} days ago`;
   };
 
+  if (isLoading) {
+    return (
+      <div className="form-container" style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(180deg, #123244 0%, #1e4359 28%, #3f6177 62%, #d8c7bd 100%)'
+      }}>
+        <div style={{
+          width: '50px',
+          height: '50px',
+          border: '4px solid rgba(255, 255, 255, 0.3)',
+          borderTop: '4px solid white',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   if (!issue) {
     return (
-      <div className="form-container">
-        <div className="form-card">
-          <div className="text-center">
-            <h2>Issue Not Found</h2>
-            <button 
-              className="btn-primary" 
-              onClick={() => navigate(isAdmin ? '/admin' : '/citizen')}
-            >
-              Go Back
-            </button>
-          </div>
-        </div>
+      <div className="form-container" style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(180deg, #123244 0%, #1e4359 28%, #3f6177 62%, #d8c7bd 100%)'
+      }}>
+        <div style={{
+          width: '50px',
+          height: '50px',
+          border: '4px solid rgba(255, 255, 255, 0.3)',
+          borderTop: '4px solid white',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
