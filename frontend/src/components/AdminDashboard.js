@@ -12,7 +12,12 @@ import {
   Settings,
   Filter,
   Search,
-  MapPin
+  MapPin,
+  UserPlus,
+  Edit,
+  Trash2,
+  X,
+  Save
 } from 'lucide-react';
 import IssueMap from './IssueMap';
 import ResolutionCharts from './analytics/ResolutionCharts';
@@ -191,6 +196,7 @@ const AdminDashboard = ({ user }) => {
           {[
             { key: 'overview', label: 'Overview', icon: BarChart3 },
             { key: 'issues', label: 'Issues Management', icon: AlertTriangle },
+            { key: 'employees', label: 'Employees', icon: Users },
             { key: 'map', label: 'Map View', icon: MapPin },
             { key: 'analytics', label: 'Analytics', icon: TrendingUp }
           ].map(tab => (
@@ -569,6 +575,9 @@ const AdminDashboard = ({ user }) => {
           </div>
         )}
 
+        {/* Employees Management */}
+        {selectedView === 'employees' && <EmployeeManagement />}
+
         {/* Analytics */}
         {selectedView === 'analytics' && (
           <div>
@@ -579,6 +588,366 @@ const AdminDashboard = ({ user }) => {
             <ResolutionCharts />
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Employee Management Component
+const EmployeeManagement = () => {
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    employeeId: '',
+    password: '',
+    role: 'field-staff',
+    departments: [],
+    email: '',
+    mobile: ''
+  });
+
+  const departments = [
+    'Road & Traffic',
+    'Water & Drainage',
+    'Electricity',
+    'Garbage & Sanitation',
+    'Street Lighting',
+    'Public Safety',
+    'Parks & Recreation',
+    'All',
+    'Other'
+  ];
+
+  const roles = [
+    { value: 'field-staff', label: 'Field Staff' },
+    { value: 'supervisor', label: 'Supervisor' },
+    { value: 'commissioner', label: 'Commissioner' }
+  ];
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      const response = await apiService.getEmployees({ limit: 100 });
+      setEmployees(response.data?.employees || []);
+    } catch (error) {
+      toast.error(`Failed to load employees: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      await apiService.createEmployee(formData);
+      toast.success('Employee created successfully');
+      setShowCreateForm(false);
+      resetForm();
+      fetchEmployees();
+    } catch (error) {
+      toast.error(`Failed to create employee: ${error.message}`);
+    }
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await apiService.updateEmployee(editingEmployee.employeeId, formData);
+      toast.success('Employee updated successfully');
+      setEditingEmployee(null);
+      resetForm();
+      fetchEmployees();
+    } catch (error) {
+      toast.error(`Failed to update employee: ${error.message}`);
+    }
+  };
+
+  const handleDelete = async (employeeId) => {
+    if (!window.confirm('Are you sure you want to deactivate this employee?')) return;
+    try {
+      await apiService.deleteEmployee(employeeId);
+      toast.success('Employee deactivated successfully');
+      fetchEmployees();
+    } catch (error) {
+      toast.error(`Failed to delete employee: ${error.message}`);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      employeeId: '',
+      password: '',
+      role: 'field-staff',
+      departments: [],
+      email: '',
+      mobile: ''
+    });
+  };
+
+  const handleEdit = (employee) => {
+    setEditingEmployee(employee);
+    setFormData({
+      name: employee.name || '',
+      employeeId: employee.employeeId || '',
+      password: '',
+      role: employee.role || 'field-staff',
+      departments: employee.departments || (employee.department ? [employee.department] : []),
+      email: employee.email || '',
+      mobile: employee.mobile || ''
+    });
+    setShowCreateForm(true);
+  };
+
+  const toggleDepartment = (dept) => {
+    setFormData(prev => ({
+      ...prev,
+      departments: prev.departments.includes(dept)
+        ? prev.departments.filter(d => d !== dept)
+        : [...prev.departments, dept]
+    }));
+  };
+
+  const getRoleBadge = (role) => {
+    const config = {
+      'field-staff': { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Field Staff' },
+      'supervisor': { bg: 'bg-yellow-50', text: 'text-yellow-700', label: 'Supervisor' },
+      'commissioner': { bg: 'bg-purple-50', text: 'text-purple-700', label: 'Commissioner' },
+      'employee': { bg: 'bg-gray-50', text: 'text-gray-700', label: 'Employee' }
+    };
+    const c = config[role] || config['employee'];
+    return (
+      <span className={`${c.bg} ${c.text} px-2 py-1 rounded-full text-xs font-medium`}>
+        {c.label}
+      </span>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '3rem' }}>
+        <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+        <p style={{ marginTop: '1rem', color: '#64748b' }}>Loading employees...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: '600', color: '#1e293b' }}>
+          Employee Management
+        </h3>
+        <button
+          onClick={() => {
+            resetForm();
+            setEditingEmployee(null);
+            setShowCreateForm(!showCreateForm);
+          }}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <UserPlus size={16} />
+          {showCreateForm ? 'Cancel' : 'Create Employee'}
+        </button>
+      </div>
+
+      {showCreateForm && (
+        <div style={{
+          background: 'white',
+          padding: '2rem',
+          borderRadius: '12px',
+          marginBottom: '2rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        }}>
+          <h4 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1.5rem', color: '#1e293b' }}>
+            {editingEmployee ? 'Edit Employee' : 'Create New Employee'}
+          </h4>
+          <form onSubmit={editingEmployee ? handleUpdate : handleCreate}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
+                <input
+                  type="text"
+                  required
+                  disabled={!!editingEmployee}
+                  value={formData.employeeId}
+                  onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password {!editingEmployee && '*'}
+                </label>
+                <input
+                  type="password"
+                  required={!editingEmployee}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={editingEmployee ? 'Leave blank to keep current' : ''}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                <select
+                  required
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {roles.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
+                <input
+                  type="tel"
+                  value={formData.mobile}
+                  onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Departments * (Select one or more)</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {departments.map(dept => (
+                  <button
+                    key={dept}
+                    type="button"
+                    onClick={() => toggleDepartment(dept)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      formData.departments.includes(dept)
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <Save size={16} />
+                {editingEmployee ? 'Update Employee' : 'Create Employee'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateForm(false);
+                  resetForm();
+                  setEditingEmployee(null);
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Employee ID</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Name</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Role</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Departments</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Email</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Status</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.length === 0 ? (
+                <tr>
+                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                    No employees found. Create your first employee to get started.
+                  </td>
+                </tr>
+              ) : (
+                employees.map((emp) => (
+                  <tr key={emp._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#1e293b' }}>{emp.employeeId}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#1e293b' }}>{emp.name}</td>
+                    <td style={{ padding: '1rem' }}>{getRoleBadge(emp.role)}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#64748b' }}>
+                      {(emp.departments || (emp.department ? [emp.department] : [])).join(', ') || 'N/A'}
+                    </td>
+                    <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#64748b' }}>{emp.email || 'N/A'}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        emp.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                      }`}>
+                        {emp.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          onClick={() => handleEdit(emp)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="Edit"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(emp.employeeId)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Deactivate"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

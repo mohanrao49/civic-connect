@@ -17,11 +17,19 @@ const notificationRoutes = require('./routes/notifications');
 // Import database connection
 const connectDB = require('./config/database');
 
+// Import escalation job
+const escalationJob = require('./jobs/escalationJob');
+
 // Initialize Express app
 const app = express();
 
 // Connect to database
 connectDB();
+
+// Start auto-escalation cron job
+if (process.env.NODE_ENV !== 'test') {
+  escalationJob.start();
+}
 
 // Security middleware
 app.use(helmet({

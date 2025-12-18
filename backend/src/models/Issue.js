@@ -56,7 +56,7 @@ const issueSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['reported', 'in-progress', 'resolved', 'closed'],
+    enum: ['reported', 'in-progress', 'resolved', 'closed', 'escalated'],
     default: 'reported'
   },
   priority: {
@@ -80,6 +80,41 @@ const issueSchema = new mongoose.Schema({
     default: null
   },
   assignedAt: {
+    type: Date,
+    default: null
+  },
+  assignedRole: {
+    type: String,
+    enum: ['field-staff', 'supervisor', 'commissioner', null],
+    default: null
+  },
+  escalationHistory: [{
+    fromRole: {
+      type: String,
+      enum: ['field-staff', 'supervisor', 'commissioner']
+    },
+    toRole: {
+      type: String,
+      enum: ['field-staff', 'supervisor', 'commissioner']
+    },
+    escalatedAt: {
+      type: Date,
+      default: Date.now
+    },
+    escalatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: {
+      type: String,
+      default: 'Time limit exceeded'
+    },
+    priority: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'urgent']
+    }
+  }],
+  escalationDeadline: {
     type: Date,
     default: null
   },
@@ -256,11 +291,78 @@ issueSchema.methods.removeUpvote = function(userId) {
 };
 
 // Method to assign issue
-issueSchema.methods.assign = function(assignedTo, assignedBy) {
+issueSchema.methods.assign = function(assignedTo, assignedBy, assignedRole = null) {
   this.assignedTo = assignedTo;
   this.assignedBy = assignedBy;
   this.assignedAt = new Date();
+  this.assignedRole = assignedRole;
   this.status = 'in-progress';
+  
+  // Calculate escalation deadline based on priority and role
+  if (assignedRole && this.priority) {
+    const deadline = this.calculateEscalationDeadline(this.priority, assignedRole);
+    this.escalationDeadline = deadline;
+  }
+  
+  return this.save();
+};
+
+// Method to calculate escalation deadline
+issueSchema.methods.calculateEscalationDeadline = function(priority, role) {
+  const now = new Date();
+  let hours = 0;
+  
+  // HIGH PRIORITY
+  if (priority === 'high' || priority === 'urgent') {
+    if (role === 'field-staff') {
+      hours = 5; // 4-6 hours, use 5 as average
+    } else if (role === 'supervisor') {
+      hours = 4;
+    }
+  }
+  // MEDIUM PRIORITY
+  else if (priority === 'medium') {
+    if (role === 'field-staff') {
+      hours = 24; // 1 day
+    } else if (role === 'supervisor') {
+      hours = 24; // 1 day
+    }
+  }
+  // LOW PRIORITY
+  else if (priority === 'low') {
+    if (role === 'field-staff') {
+      hours = 48; // 2 days
+    } else if (role === 'supervisor') {
+      hours = 36; // 1.5 days
+    }
+  }
+  
+  return new Date(now.getTime() + hours * 60 * 60 * 1000);
+};
+
+// Method to escalate issue
+issueSchema.methods.escalate = function(toRole, escalatedBy, reason = 'Time limit exceeded') {
+  const fromRole = this.assignedRole;
+  
+  this.escalationHistory.push({
+    fromRole,
+    toRole,
+    escalatedAt: new Date(),
+    escalatedBy,
+    reason,
+    priority: this.priority
+  });
+  
+  this.assignedRole = toRole;
+  this.assignedAt = new Date();
+  this.status = 'escalated';
+  
+  // Recalculate deadline for new role
+  if (toRole && this.priority) {
+    const deadline = this.calculateEscalationDeadline(this.priority, toRole);
+    this.escalationDeadline = deadline;
+  }
+  
   return this.save();
 };
 

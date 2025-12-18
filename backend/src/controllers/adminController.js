@@ -559,6 +559,257 @@ class AdminController {
     }
   }
 
+  // Create employee (Field Staff, Supervisor, or Commissioner)
+  async createEmployee(req, res) {
+    try {
+      const { name, employeeId, password, role, departments, email, mobile } = req.body;
+
+      // Validate required fields
+      if (!name || !employeeId || !password || !role) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name, Employee ID, Password, and Role are required'
+        });
+      }
+
+      // Validate role
+      const validRoles = ['field-staff', 'supervisor', 'commissioner'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          message: `Role must be one of: ${validRoles.join(', ')}`
+        });
+      }
+
+      // Validate departments
+      const validDepartments = [
+        'Road & Traffic',
+        'Water & Drainage',
+        'Electricity',
+        'Garbage & Sanitation',
+        'Street Lighting',
+        'Public Safety',
+        'Parks & Recreation',
+        'All',
+        'Other'
+      ];
+
+      let departmentArray = [];
+      if (departments) {
+        if (Array.isArray(departments)) {
+          departmentArray = departments.filter(d => validDepartments.includes(d));
+        } else if (typeof departments === 'string') {
+          departmentArray = [departments].filter(d => validDepartments.includes(d));
+        }
+      }
+
+      if (departmentArray.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one valid department must be selected'
+        });
+      }
+
+      // Check if employee ID already exists
+      const existingUser = await User.findOne({ employeeId });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee ID already exists'
+        });
+      }
+
+      // Create new employee
+      const employee = new User({
+        name,
+        employeeId,
+        password,
+        role,
+        departments: departmentArray,
+        department: departmentArray.length === 1 ? departmentArray[0] : (departmentArray.includes('All') ? 'All' : departmentArray[0]),
+        email: email || null,
+        mobile: mobile || null,
+        isVerified: true,
+        isActive: true
+      });
+
+      await employee.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Employee created successfully',
+        data: {
+          employee: employee.getProfile()
+        }
+      });
+    } catch (error) {
+      console.error('Create employee error:', error);
+      if (error.code === 11000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee ID or email already exists'
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: 'Server error creating employee',
+        error: error.message
+      });
+    }
+  }
+
+  // Get all employees
+  async getEmployees(req, res) {
+    try {
+      const { page = 1, limit = 20, role, department, search } = req.query;
+
+      const filter = {
+        role: { $in: ['field-staff', 'supervisor', 'commissioner', 'employee'] },
+        isActive: true
+      };
+
+      if (role) filter.role = role;
+      if (department) {
+        filter.$or = [
+          { departments: { $in: [department, 'All'] } },
+          { department: { $in: [department, 'All'] } }
+        ];
+      }
+      if (search) {
+        filter.$or = [
+          ...(filter.$or || []),
+          { name: { $regex: search, $options: 'i' } },
+          { employeeId: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const employees = await User.find(filter)
+        .select('-password -otp')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
+
+      const total = await User.countDocuments(filter);
+
+      res.json({
+        success: true,
+        data: {
+          employees,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            totalItems: total,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Get employees error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error getting employees',
+        error: error.message
+      });
+    }
+  }
+
+  // Update employee
+  async updateEmployee(req, res) {
+    try {
+      const { employeeId } = req.params;
+      const { name, role, departments, isActive, email, mobile } = req.body;
+
+      const employee = await User.findOne({ employeeId });
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: 'Employee not found'
+        });
+      }
+
+      if (name) employee.name = name;
+      if (role) {
+        const validRoles = ['field-staff', 'supervisor', 'commissioner'];
+        if (validRoles.includes(role)) {
+          employee.role = role;
+        }
+      }
+      if (departments) {
+        const validDepartments = [
+          'Road & Traffic',
+          'Water & Drainage',
+          'Electricity',
+          'Garbage & Sanitation',
+          'Street Lighting',
+          'Public Safety',
+          'Parks & Recreation',
+          'All',
+          'Other'
+        ];
+        const departmentArray = Array.isArray(departments) 
+          ? departments.filter(d => validDepartments.includes(d))
+          : [departments].filter(d => validDepartments.includes(d));
+        if (departmentArray.length > 0) {
+          employee.departments = departmentArray;
+          employee.department = departmentArray.length === 1 ? departmentArray[0] : (departmentArray.includes('All') ? 'All' : departmentArray[0]);
+        }
+      }
+      if (isActive !== undefined) employee.isActive = isActive;
+      if (email) employee.email = email;
+      if (mobile) employee.mobile = mobile;
+
+      await employee.save();
+
+      res.json({
+        success: true,
+        message: 'Employee updated successfully',
+        data: {
+          employee: employee.getProfile()
+        }
+      });
+    } catch (error) {
+      console.error('Update employee error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error updating employee',
+        error: error.message
+      });
+    }
+  }
+
+  // Delete employee (soft delete - set isActive to false)
+  async deleteEmployee(req, res) {
+    try {
+      const { employeeId } = req.params;
+
+      const employee = await User.findOne({ employeeId });
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: 'Employee not found'
+        });
+      }
+
+      employee.isActive = false;
+      await employee.save();
+
+      res.json({
+        success: true,
+        message: 'Employee deactivated successfully'
+      });
+    } catch (error) {
+      console.error('Delete employee error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error deleting employee',
+        error: error.message
+      });
+    }
+  }
+
   // Get issue reports
   async getIssueReports(req, res) {
     try {

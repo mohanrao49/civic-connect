@@ -37,14 +37,15 @@ const userSchema = new mongoose.Schema({
   },
   role: {
   	type: String,
-  	enum: ['citizen', 'admin', 'guest', 'employee'],
+  	enum: ['citizen', 'admin', 'guest', 'employee', 'field-staff', 'supervisor', 'commissioner'],
   	default: 'citizen'
   },
   employeeId: {
   	type: String,
   	unique: true,
   	sparse: true,
-  	trim: true
+  	trim: true,
+  	index: true
   },
   department: {
   	type: String,
@@ -56,10 +57,25 @@ const userSchema = new mongoose.Schema({
   	  'Street Lighting',
   	  'Public Safety',
   	  'Parks & Recreation',
+  	  'All',
   	  'Other'
   	],
   	default: null
   },
+  departments: [{
+  	type: String,
+  	enum: [
+  	  'Road & Traffic',
+  	  'Water & Drainage',
+  	  'Electricity',
+  	  'Garbage & Sanitation',
+  	  'Street Lighting',
+  	  'Public Safety',
+  	  'Parks & Recreation',
+  	  'All',
+  	  'Other'
+  	]
+  }],
   isVerified: {
     type: Boolean,
     default: false
@@ -113,6 +129,8 @@ const userSchema = new mongoose.Schema({
 // Index for better query performance
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
+userSchema.index({ employeeId: 1 });
+userSchema.index({ departments: 1 });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {

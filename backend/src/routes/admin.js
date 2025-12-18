@@ -24,6 +24,12 @@ router.put('/issues/:id/status', validateObjectId('id'), adminController.updateI
 router.get('/users', validatePagination, adminController.getUsers);
 router.put('/users/:userId/status', validateObjectId('userId'), adminController.updateUserStatus);
 
+// Employee management
+router.post('/employees', adminController.createEmployee);
+router.get('/employees', validatePagination, adminController.getEmployees);
+router.put('/employees/:employeeId', adminController.updateEmployee);
+router.delete('/employees/:employeeId', adminController.deleteEmployee);
+
 // Notifications
 router.get('/notifications', validatePagination, adminController.getSystemNotifications);
 router.post('/announcement', adminController.sendAnnouncement);

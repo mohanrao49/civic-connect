@@ -29,10 +29,67 @@ class IssueController {
 
       const filter = { isPublic: true };
 
+      // Role-based filtering
+      const user = req.user;
+      if (user) {
+        const employeeRoles = ['field-staff', 'supervisor', 'commissioner', 'employee'];
+        if (employeeRoles.includes(user.role)) {
+          // Field Staff: Only see complaints assigned to them in their department
+          if (user.role === 'field-staff' || user.role === 'employee') {
+            filter.assignedTo = user._id;
+            // Filter by department
+            const userDepartments = user.departments && user.departments.length > 0 
+              ? user.departments 
+              : (user.department ? [user.department] : []);
+            
+            if (!userDepartments.includes('All')) {
+              filter.category = { $in: userDepartments };
+            }
+          }
+          // Supervisor: See complaints assigned to them + escalated from field-staff
+          else if (user.role === 'supervisor') {
+            filter.$or = [
+              { assignedTo: user._id },
+              { 
+                assignedRole: 'field-staff',
+                status: 'escalated',
+                category: { 
+                  $in: user.departments && user.departments.length > 0 
+                    ? (user.departments.includes('All') ? [] : user.departments)
+                    : (user.department && user.department !== 'All' ? [user.department] : [])
+                }
+              }
+            ];
+            
+            // Filter by department if not 'All'
+            const userDepartments = user.departments && user.departments.length > 0 
+              ? user.departments 
+              : (user.department ? [user.department] : []);
+            
+            if (!userDepartments.includes('All') && userDepartments.length > 0) {
+              if (filter.$or) {
+                filter.$or = filter.$or.map(condition => {
+                  if (condition.category) {
+                    condition.category = { $in: userDepartments };
+                  }
+                  return condition;
+                });
+              } else {
+                filter.category = { $in: userDepartments };
+              }
+            }
+          }
+          // Commissioner: See ALL complaints from ALL departments
+          else if (user.role === 'commissioner') {
+            // No additional filtering - can see everything
+          }
+        }
+      }
+
       if (status && status !== 'all') filter.status = status;
-      if (category) filter.category = category;
+      if (category && !filter.category) filter.category = category;
       if (priority) filter.priority = priority;
-      if (assignedTo) filter.assignedTo = assignedTo;
+      if (assignedTo && !filter.assignedTo) filter.assignedTo = assignedTo;
       if (reportedBy) filter.reportedBy = reportedBy;
 
       if (search) {

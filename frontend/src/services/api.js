@@ -230,6 +230,41 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // Employee Management
+  async createEmployee(employeeData) {
+    const response = await fetch(`${this.baseURL}/admin/employees`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(employeeData)
+    });
+    return this.handleResponse(response);
+  }
+
+  async getEmployees(params = {}) {
+    const queryParams = new URLSearchParams(params).toString();
+    const response = await fetch(`${this.baseURL}/admin/employees?${queryParams}`, {
+      headers: this.getAuthHeaders()
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateEmployee(employeeId, employeeData) {
+    const response = await fetch(`${this.baseURL}/admin/employees/${employeeId}`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(employeeData)
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteEmployee(employeeId) {
+    const response = await fetch(`${this.baseURL}/admin/employees/${employeeId}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders()
+    });
+    return this.handleResponse(response);
+  }
+
   // ================= COMMENTS =================
   async getComments(issueId) {
     const response = await fetch(`${this.baseURL}/issues/${issueId}/comments`, {

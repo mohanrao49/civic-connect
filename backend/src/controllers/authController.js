@@ -155,15 +155,24 @@ class AuthController {
   // Login user
   async login(req, res) {
     try {
-      const { email, mobile, password } = req.body;
+      const { email, mobile, employeeId, password } = req.body;
 
-      // Find user by email or mobile
-      const user = await User.findOne({
-        $or: [
-          { email: email },
-          { mobile: mobile }
-        ]
-      }).select('+password');
+      // Find user by email, mobile, or employeeId
+      const query = {};
+      if (employeeId) {
+        query.employeeId = employeeId;
+      } else if (email) {
+        query.email = email;
+      } else if (mobile) {
+        query.mobile = mobile;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Email, mobile, or employee ID is required'
+        });
+      }
+
+      const user = await User.findOne(query).select('+password');
 
       if (!user) {
         return res.status(401).json({
@@ -587,10 +596,17 @@ class AuthController {
     }
   }
 
-  // Employee login
+  // Employee login (using Employee ID)
   async employeeLogin(req, res) {
     try {
-      const { employeeId, password, department } = req.body;
+      const { employeeId, password } = req.body;
+
+      if (!employeeId || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee ID and password are required'
+        });
+      }
 
       let user = await User.findOne({ employeeId }).select('+password');
 
@@ -610,22 +626,20 @@ class AuthController {
         user = await User.findOne({ _id: demo._id }).select('+password');
       }
 
-      if (!user || user.role !== 'employee') {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      // Check if user is an employee (field-staff, supervisor, commissioner, or legacy 'employee')
+      const employeeRoles = ['field-staff', 'supervisor', 'commissioner', 'employee'];
+      if (!user || !employeeRoles.includes(user.role)) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid employee credentials' 
+        });
       }
 
       if (!user.isActive) {
-        return res.status(401).json({ success: false, message: 'Account is deactivated' });
-      }
-
-      if (department && user.department !== department) {
-        const allowDemo = process.env.ALLOW_DEMO_EMPLOYEE !== 'false';
-        if (allowDemo) {
-          user.department = department;
-          await user.save();
-        } else {
-          return res.status(401).json({ success: false, message: 'Department mismatch' });
-        }
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Account is deactivated' 
+        });
       }
 
       const isPasswordValid = await user.comparePassword(password);
@@ -642,7 +656,7 @@ class AuthController {
 
       res.json({
         success: true,
-        message: 'Employee login successful',
+        message: `Welcome, Employee ID: ${user.employeeId}`,
         data: {
           user: user.getProfile(),
           token,
