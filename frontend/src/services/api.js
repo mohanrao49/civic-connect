@@ -171,6 +171,16 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // ================= EMPLOYEE =================
+  async getEmployeeIssues(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const response = await fetch(
+      `${this.baseURL}/employee/issues${queryString ? `?${queryString}` : ''}`,
+      { headers: this.getAuthHeaders() }
+    );
+    return this.handleResponse(response);
+  }
+
   async upvoteIssue(id) {
     const response = await fetch(`${this.baseURL}/issues/${id}/upvote`, {
       method: 'POST',
@@ -183,6 +193,32 @@ class ApiService {
     const response = await fetch(`${this.baseURL}/issues/${id}/upvote`, {
       method: 'DELETE',
       headers: this.getAuthHeaders()
+    });
+    return this.handleResponse(response);
+  }
+
+  // ================= ADMIN =================
+  async getAdminDashboard() {
+    const response = await fetch(`${this.baseURL}/admin/dashboard`, {
+      headers: this.getAuthHeaders()
+    });
+    return this.handleResponse(response);
+  }
+
+  async assignIssue(issueId, body = {}) {
+    const response = await fetch(`${this.baseURL}/admin/issues/${issueId}/assign`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(body)
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateIssueStatus(issueId, body) {
+    const response = await fetch(`${this.baseURL}/admin/issues/${issueId}/status`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(body)
     });
     return this.handleResponse(response);
   }
