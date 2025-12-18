@@ -381,7 +381,7 @@ const ReportIssue = ({ user }) => {
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
             <label className="form-label">Issue Title</label>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div className="form-row-inline" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 type="text"
                 className="form-input"
@@ -423,7 +423,7 @@ const ReportIssue = ({ user }) => {
 
           <div className="form-group">
             <label className="form-label">Description</label>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'start' }}>
+            <div className="form-row-inline" style={{ display: 'flex', gap: '0.5rem', alignItems: 'start' }}>
               <textarea
                 className="form-input"
                 rows="4"
@@ -447,7 +447,7 @@ const ReportIssue = ({ user }) => {
 
           <div className="form-group">
             <label className="form-label">Location</label>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'end' }}>
+            <div className="form-row-inline" style={{ display: 'flex', gap: '1rem', alignItems: 'end' }}>
               <input
                 type="text"
                 className="form-input"

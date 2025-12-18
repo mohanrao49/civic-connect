@@ -85,6 +85,57 @@ class IssueController {
   }
 
   // ===============================
+  // GET ISSUES FOR A SPECIFIC USER
+  // ===============================
+  async getUserIssues(req, res) {
+    try {
+      const { userId } = req.params;
+      const {
+        status,
+        page = 1,
+        limit = 20
+      } = req.query;
+
+      // Only allow a user to see their own issues, or admins to see anyone's
+      if (req.user.role !== 'admin' && req.user._id.toString() !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to view these issues'
+        });
+      }
+
+      const filter = { reportedBy: userId };
+      if (status && status !== 'all') {
+        filter.status = status;
+      }
+
+      const skip = (page - 1) * limit;
+
+      const issues = await Issue.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10));
+
+      const total = await Issue.countDocuments(filter);
+
+      return res.json({
+        success: true,
+        data: {
+          issues,
+          pagination: {
+            currentPage: Number(page),
+            totalPages: Math.ceil(total / limit),
+            totalItems: total,
+            itemsPerPage: Number(limit)
+          }
+        }
+      });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // ===============================
   // GET SINGLE ISSUE
   // ===============================
   async getIssue(req, res) {
@@ -117,35 +168,49 @@ class IssueController {
         isAnonymous = false
       } = req.body;
 
-      // ---------- ML VALIDATION ----------
-      const mlPayload = {
-        report_id: uuidv4(),
-        description,
-        category,
-        user_id: req.user._id.toString(),
-        image_url: null,
-        latitude: location?.coordinates?.[1] || null,
-        longitude: location?.coordinates?.[0] || null
-      };
+      // ---------- ML VALIDATION (BEST-EFFORT / OPTIONAL) ----------
+      let mlResult = { status: 'accepted', priority: 'medium' };
 
-      const mlResponse = await fetch(process.env.ML_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mlPayload)
-      });
+      if (process.env.ML_API_URL) {
+        try {
+          const coords = location?.coordinates;
+          const latitude = Array.isArray(coords) ? coords[0] : coords?.latitude || null;
+          const longitude = Array.isArray(coords) ? coords[1] : coords?.longitude || null;
 
-      if (!mlResponse.ok) {
-        return res.status(502).json({ success: false, message: 'ML service unavailable' });
-      }
+          const mlPayload = {
+            report_id: uuidv4(),
+            description,
+            category,
+            user_id: req.user._id.toString(),
+            image_url: null,
+            latitude,
+            longitude
+          };
 
-      const mlResult = await mlResponse.json();
+          const mlResponse = await fetch(process.env.ML_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mlPayload)
+          });
 
-      if (mlResult.status === 'rejected') {
-        return res.status(400).json({
-          success: false,
-          message: 'Issue rejected by ML',
-          reason: mlResult.reason
-        });
+          if (mlResponse.ok) {
+            const parsed = await mlResponse.json();
+            mlResult = parsed || mlResult;
+
+            if (mlResult.status === 'rejected') {
+              return res.status(400).json({
+                success: false,
+                message: 'Issue rejected by ML',
+                reason: mlResult.reason
+              });
+            }
+          } else {
+            // If ML service is unavailable, continue gracefully
+            console.warn('ML service unavailable, continuing without ML validation');
+          }
+        } catch (mlError) {
+          console.warn('ML validation failed, continuing without ML:', mlError.message);
+        }
       }
 
       // ---------- IMAGE NORMALIZATION ----------
@@ -176,7 +241,7 @@ class IssueController {
         description,
         category,
         location,
-        priority: mlResult.priority || 'normal',
+        priority: mlResult.priority || 'medium',
         tags,
         isAnonymous,
         reportedBy: req.user._id,

@@ -614,6 +614,12 @@ body {
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
 }
 
+.form-row-inline {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .form-header {
   text-align: center;
   margin-bottom: 2rem;
@@ -707,6 +713,35 @@ body {
     border-radius: 0;
     padding: 1.25rem 1rem 2rem;
     max-width: 100%;
+  }
+
+  .form-title {
+    font-size: 1.4rem;
+  }
+
+  .form-label {
+    font-size: 0.85rem;
+  }
+
+  .form-input {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.8rem;
+    font-size: 0.9rem;
+  }
+
+  .form-row-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-row-inline .btn-secondary {
+    width: 100%;
+    text-align: center;
   }
 
   .issues-grid {
