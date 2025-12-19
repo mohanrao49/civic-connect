@@ -257,13 +257,22 @@ const ReportIssue = ({ user }) => {
         description: reportData.description,
         category: reportData.category,
         user_id: user?._id || user?.id || 'anon',
-        image_url: imageUrl || null
+        image_url: imageUrl || null,
+        latitude: reportData.coordinates[0],
+        longitude: reportData.coordinates[1]
       };
 
-      const mlResult = await apiService.validateReportWithML(mlPayload);
-      console.log('ML validation result:', mlResult);
+      let mlResult;
+      try {
+        mlResult = await apiService.validateReportWithML(mlPayload);
+        console.log('ML validation result:', mlResult);
+      } catch (mlError) {
+        console.error('ML validation error:', mlError);
+        toast.warning('ML validation failed, proceeding with submission...');
+        mlResult = { status: 'accepted' };
+      }
 
-      if (mlResult.status !== 'accepted') {
+      if (mlResult && mlResult.status !== 'accepted') {
         setIsSubmitting(false);
         const reason = mlResult.reason || 'Report rejected by validator';
         toast.error(`Report rejected: ${reason}`);

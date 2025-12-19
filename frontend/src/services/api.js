@@ -49,12 +49,24 @@ class ApiService {
 
   // ================= ML VALIDATION =================
   async validateReportWithML(payload) {
-    const response = await fetch(`${this.mlBaseURL}/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return this.handleResponse(response);
+    try {
+      const response = await fetch(`${this.mlBaseURL}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('ML backend error:', errorText);
+        throw new Error(`ML validation failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error calling ML backend:', error);
+      throw error;
+    }
   }
 
   // ================= AUTH =================
