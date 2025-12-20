@@ -1,10 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.pipeline import classify_report
+from app.pipeline import classify_report, initialize_models
 from app.models import ReportIn
 import traceback
 
 app = FastAPI(title="Civic ML Backend API")
+
+# Initialize models on startup
+@app.on_event("startup")
+async def startup_event():
+    initialize_models()
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,311 +1,261 @@
 from app import storage, dataset
 from app import image_classifier as ic
-from app.text_rules import is_abusive, detect_category, detect_urgency
-import re
-
-# Profanity detection
+from app.text_rules import (
+    is_abusive,
+    detect_category,
+    detect_urgency,
+    CATEGORY_KEYWORDS
+)
 import warnings
-# Suppress pkg_resources deprecation warnings globally (they're just warnings, not errors)
+
 warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources.*")
 
-PROFANITY_AVAILABLE = False
-_profanity_predict = None
-try:
-    from profanity_check import predict as _profanity_predict
-    # Test that it works with a known profane word
-    _test_result = _profanity_predict(["fuck"])
-    # Check if result is valid (should be numpy array or list with 1)
-    if _test_result is not None:
-        PROFANITY_AVAILABLE = True
-except ImportError:
-    # Library truly not installed
-    pass  # Silently fall back to keyword-based detection
-except Exception as e:
-    # Any other import/runtime error - silently fall back
-    PROFANITY_AVAILABLE = False
-    _profanity_predict = None
 
-# Category-scoped urgent keywords (same methodology as CATEGORY_KEYWORDS)
-# Keep a Global bucket to preserve previous behavior while enabling per-category tuning
-URGENT_KEYWORDS = {
-    "Global": [
-        # Road & Transport
-        "accident", "collision", "roadblock", "traffic jam", "hit and run",
-        "bridge collapse", "pothole accident", "road caved in",
-
-        # Fire & Hazard
-        "fire", "burning", "smoke", "blast", "explosion", "short circuit",
-        "gas leak", "electric spark", "transformer burst",
-
-        # Water & Flood
-        "flood", "waterlogging", "sewage overflow", "pipe burst",
-        "drain blocked", "heavy rain", "overflowing drain", "contaminated water",
-
-        # Health & Sanitation
-        "garbage overflow", "dead animal", "toxic smell", "mosquito breeding",
-        "epidemic", "dengue outbreak", "cholera", "sanitation hazard","dead","death"
-
-        # Safety & Security
-        "violence", "crime", "theft", "fight", "robbery", "public hazard",
-        "building collapse", "wall collapse", "tree fallen", "landslide",
-
-        # Other Civic Emergencies
-        "power outage", "electric shock", "streetlight sparks",
-        "ambulance needed", "emergency help"
+# ------------------------------------
+# Image → Category reference (COMPREHENSIVE)
+# ------------------------------------
+IMAGE_TO_CATEGORY_MAP = {
+    "Road & Traffic": [
+        "pothole", "damaged road", "illegal parking", "broken footpath",
+        "traffic signal not working", "road accident", "road", "street", "traffic",
+        "speed breaker", "crosswalk", "footpath", "pavement", "crack", "broken road",
+        "road caved", "road sinking", "uneven road", "traffic jam", "congestion",
+        "signal", "junction", "crossroad", "accident", "collision", "crash", "hit",
+        "speed bump", "divider", "sidewalk", "zebra crossing", "pedestrian", "highway",
+        "bridge", "intersection", "pavement", "asphalt"
     ],
-    # Per-category overrides/extensions (can be expanded as needed)
-    "Road & Traffic": ["accident", "collision", "roadblock", "pothole"],
-    "Water & Drainage": ["flood", "waterlogging", "sewage overflow", "pipe burst"],
-    "Electricity": ["power outage", "short circuit", "electric shock"],
-    "Garbage & Sanitation": ["garbage overflow", "toxic smell","dead","death"],
-    "Street Lighting": ["streetlight sparks", "dark area"],
-    "Public Safety": ["violence", "robbery", "fire"],
-    "Parks & Recreation": ["tree fallen"],
-    "Other": []
+    "Garbage & Sanitation": [
+        "garbage dump", "overflowing dustbin", "open drain", "sewage overflow",
+        "dead animal", "toilet issue", "garbage", "trash", "waste", "bin",
+        "sanitation", "dirty", "sewage", "cleanliness", "dustbin", "dump", "dumping",
+        "garbage pile", "waste pile", "filthy", "unclean", "bad smell", "toxic smell",
+        "foul smell", "overflowing bin", "sewer", "manhole", "dead", "animal carcass",
+        "dead dog", "dead cat", "dead cow", "dead body", "mosquito", "flies", "infection", "disease"
+    ],
+    "Street Lighting": [
+        "streetlight not working", "fallen electric pole", "loose wire", "power outage",
+        "streetlight", "lamp", "bulb", "pole", "light", "electric pole",
+        "street lamp", "lighting", "dark area", "electricity", "power",
+        "broken streetlight", "non-working light", "flickering light", "dim light",
+        "street lighting", "outdoor lighting", "public lighting", "night lighting",
+        "lamp post", "pole light", "not working", "broken light", "flickering",
+        "dark", "no lighting", "illumination"
+    ],
+    "Water & Drainage": [
+        "waterlogging", "pipe burst", "no water supply", "drainage issue", "flood",
+        "drain", "drainage", "sewage", "sewer", "leak", "leaking", "leakage",
+        "pipe", "water", "overflow", "water supply", "drainage system",
+        "no water", "low pressure", "drinking water", "contaminated water",
+        "pipe leak", "broken pipe", "blocked drain", "overflowing drain",
+        "stagnant water", "sewage water", "rain water", "water pipe"
+    ],
+    "Parks & Recreation": [
+        "tree fallen", "illegal construction", "park maintenance", "encroachment",
+        "park", "garden", "playground", "tree", "bench", "grass", "lawn",
+        "recreation", "green space", "park area", "garden area", "flooded park",
+        "water in park", "park with water", "playground equipment", "walking path",
+        "fountain", "pond", "lake", "outdoor space", "public space",
+        "children park", "public park", "swing", "slide", "walking track",
+        "fallen tree", "broken fence", "garden bench"
+    ],
+    "Public Safety": [
+        "fire", "gas leak", "building collapse", "accident site",
+        "crime", "robbery", "theft", "violence", "hazard", "danger",
+        "safety", "harassment", "emergency", "accident", "smoke", "burning",
+        "gas", "cylinder leak", "collapse", "wall collapse", "roof falling",
+        "theft", "fight", "assault", "unsafe", "life risk", "explosion"
+    ],
+    "Electricity": [
+        "electric", "electricity", "power", "outage", "wire", "transformer",
+        "short circuit", "shock", "cable", "meter", "electrical", "voltage", "current",
+        "no power", "power cut", "pole", "electric pole", "spark",
+        "electrocution", "electric shock", "live wire", "power line"
+    ]
+}
+
+GENERIC_IMAGE_LABELS = {
+    "other", "outdoor", "outdoor space", "public space", "area", "scene", "general"
 }
 
 
-# optional model availability flags are handled inside image_classifier
-
-def initialize_models():
-    # initialize image classifier (CLIP) if available
-    try:
-        ic.initialize_clip()
-    except Exception:
-        pass
-
+# ------------------------------------
+# Main pipeline
+# ------------------------------------
 def classify_report(report: dict):
     try:
-        if not report:
-            return {
-                "report_id": "unknown",
-                "status": "rejected",
-                "reason": "Empty report data"
-            }
-        
-        desc = (report.get("description") or "").strip()
-        desc_lower = desc.lower()
-        
-        if not desc:
-            return {
-                "report_id": report.get("report_id", "unknown"),
-                "accept": False,
-                "status": "rejected",
-                "reason": "Description is required"
-            }
-        
-        # Auto-detect category from description
-        cat = detect_category(desc)
-        
-        # Auto-reject if category is "Other"
-        if cat == "Other":
-            result = {
-                "report_id": report.get("report_id", "unknown"),
-                "accept": False,
-                "status": "rejected",
-                "category": cat,
-                "department": cat,
-                "reason": "Unable to determine issue category from description"
-            }
-            dataset.save_report({**report, **result})
-            return result
+        description = (report.get("description") or "").strip()
+        if not description:
+            return reject(report, "Description is required")
 
-        # 1. Reject if abusive (using text_rules + profanity-check library)
-        # Use text_rules.is_abusive() as primary check
-        is_profane_keywords = is_abusive(desc)
-        
-        # Also try ML model if available
-        is_profane_ml = False
-        if PROFANITY_AVAILABLE and _profanity_predict is not None:
-            try:
-                # profanity_check.predict returns a numpy array with 1 for profane, 0 for clean
-                predictions = _profanity_predict([desc])
-                # Handle numpy array, list, or scalar returns
-                if hasattr(predictions, '__getitem__') and len(predictions) > 0:
-                    is_profane_ml = bool(int(predictions[0]) == 1)
-                elif hasattr(predictions, 'item'):
-                    is_profane_ml = bool(int(predictions.item()) == 1)
-                else:
-                    is_profane_ml = bool(int(predictions) == 1)
-            except Exception:
-                # If profanity_check fails at runtime, just use keyword check
-                pass
-        
-        # Reject if EITHER detection method finds profanity
-        is_profane = is_profane_keywords or is_profane_ml
-        
-        if is_profane:
-            result = {
-                "report_id": report.get("report_id", "unknown"),
-                "accept": False,
-                "status": "rejected",
-                "category": cat,
-                "department": cat,
-                "reason": "Abusive language detected"
-            }
-            dataset.save_report({**report, **result})
-            return result
+        category = detect_category(description)
+        if category == "Other":
+            return reject(report, "Unable to determine issue category")
 
-        # 2. Image-description validation (if image provided)
-        # Made more lenient: only reject if image clearly doesn't match, allow "other" and handle failures gracefully
+        if is_abusive(description):
+            return reject(report, "Abusive language detected", category)
+
+        # STEP 1: Check image against detected category FIRST (BEFORE duplicate check)
         image_url = report.get("image_url")
         if image_url:
+            print(f"[DEBUG] Processing image for category '{category}': {image_url}")
+            
+            # CRITICAL: Validate image matches category FIRST
+            # If image doesn't match, reject immediately - don't check duplicates
+            image_matches = image_matches_category(image_url, category)
+            
+            if not image_matches:
+                # Image doesn't match category - reject immediately
+                # Don't check for duplicates if image doesn't even match
+                print(f"[DEBUG] Image does NOT match category '{category}' - rejecting without duplicate check")
+                return reject(
+                    report,
+                    "Image does not match the issue description. Please provide an image related to the reported category.",
+                    category
+                )
+            
+            print(f"[DEBUG] Image matches category '{category}' - proceeding to duplicate check")
+            
+            # STEP 2: Only check for duplicates if image matches category
+            # We only reach here if image_matches == True
             try:
-                image_cat = ic.classify_image(image_url)
-                image_label = str(image_cat).lower() if image_cat else "other"
+                # Check for duplicates with threshold=0 (EXACT match only - most strict)
+                # This prevents false positives from similar but different images
+                print(f"[DEBUG] Checking for duplicate image: {image_url}")
+                is_dup = storage.is_duplicate_image(image_url, threshold=0, store=False)
                 
-                # Map image labels to categories
-                IMAGE_TO_CATEGORY_MAP = {
-                    "Road & Traffic": [
-                        "pothole", "damaged road", "illegal parking", "broken footpath",
-                        "traffic signal not working", "road accident", "road", "street", "traffic",
-                        "speed breaker", "crosswalk", "footpath", "pavement"
-                    ],
-                    "Garbage & Sanitation": [
-                        "garbage dump", "overflowing dustbin", "open drain", "sewage overflow",
-                        "dead animal", "toilet issue", "garbage", "trash", "waste", "bin",
-                        "sanitation", "dirty", "sewage", "cleanliness", "dustbin"
-                    ],
-                    "Street Lighting": [
-                        "streetlight not working", "fallen electric pole", "loose wire", "power outage",
-                        "streetlight", "lamp", "bulb", "pole", "light", "electric pole",
-                        "street lamp", "lighting", "dark area", "electricity", "power",
-                        "broken streetlight", "non-working light", "flickering light", "dim light",
-                        "street lighting", "outdoor lighting", "public lighting", "night lighting"
-                    ],
-                    "Water & Drainage": [
-                        "waterlogging", "pipe burst", "no water supply", "drainage issue", "flood",
-                        "drain", "drainage", "sewage", "sewer", "leak", "leaking", "leakage",
-                        "pipe", "water", "overflow", "water supply", "drainage system"
-                    ],
-                    "Parks & Recreation": [
-                        "tree fallen", "illegal construction", "park maintenance", "encroachment",
-                        "park", "garden", "playground", "tree", "bench", "grass", "lawn",
-                        "recreation", "green space", "park area", "garden area", "flooded park",
-                        "water in park", "park with water", "playground equipment", "walking path",
-                        "fountain", "pond", "lake", "outdoor space", "public space"
-                    ],
-                    "Public Safety": [
-                        "fire", "gas leak", "building collapse", "accident site",
-                        "crime", "robbery", "theft", "violence", "hazard", "danger",
-                        "safety", "harassment", "emergency", "accident"
-                    ],
-                    "Electricity": [
-                        "electric", "electricity", "power", "outage", "wire", "transformer",
-                        "short circuit", "shock", "cable", "meter", "electrical", "voltage", "current"
-                    ]
-                }
+                if is_dup:
+                    print(f"[DEBUG] DUPLICATE DETECTED for URL: {image_url}")
+                    return reject(report, "Duplicate image detected. This image has already been used in another report.", category)
                 
-                # Get allowed labels for the detected category
-                category_in_map = cat in IMAGE_TO_CATEGORY_MAP
-                allowed_labels = [label.lower() for label in IMAGE_TO_CATEGORY_MAP.get(cat, [])]
-                
-                # Always allow "other" as a fallback (classifier uncertainty is acceptable)
-                # Also add "other" to allowed labels for this category
-                if "other" not in allowed_labels:
-                    allowed_labels.append("other")
-                
-                # More lenient validation:
-                # 1. If image is "other", allow it (classifier couldn't determine, but user provided it)
-                # 2. If category not in map, allow it (new category or unmapped)
-                # 3. Only reject if image label clearly conflicts with category
-                if image_label == "other":
-                    # Image classifier couldn't determine category - allow it since user provided the image
-                    print(f"Image classified as 'other' for category '{cat}' - allowing (lenient mode)")
-                elif not category_in_map:
-                    # Category not in mapping - allow it
-                    print(f"Category '{cat}' not in image mapping - allowing (lenient mode)")
-                else:
-                    # Check if image label matches detected category (including "other")
-                    image_matches_category = any(label in image_label or image_label in label for label in allowed_labels)
-                    
-                    if not image_matches_category:
-                        # Only reject if we have a clear mismatch (image label exists but doesn't match)
-                        # Check if image label is a known category label that conflicts
-                        conflicting_categories = []
-                        for other_cat, other_labels in IMAGE_TO_CATEGORY_MAP.items():
-                            if other_cat != cat:
-                                other_labels_lower = [l.lower() for l in other_labels]
-                                if any(label in image_label or image_label in label for label in other_labels_lower):
-                                    conflicting_categories.append(other_cat)
-                        
-                        # Only reject if image clearly belongs to a different category
-                        if conflicting_categories:
-                            print(f"Image label '{image_label}' conflicts with category '{cat}' - matches: {conflicting_categories}")
-                            result = {
-                                "report_id": report.get("report_id", "unknown"),
-                                "accept": False,
-                                "status": "rejected",
-                                "category": cat,
-                                "department": cat,
-                                "reason": "Image does not match the issue description. Please provide an image related to the reported issue."
-                            }
-                            dataset.save_report({**report, **result})
-                            return result
-                        else:
-                            # Image label doesn't match but also doesn't clearly conflict - allow it
-                            print(f"Image label '{image_label}' doesn't match category '{cat}' but no clear conflict - allowing (lenient mode)")
+                print(f"[DEBUG] Image is NOT duplicate - storing for future checks")
+                # Only store if not a duplicate (to track for future checks)
+                # This ensures we remember this image for future duplicate detection
+                storage.is_duplicate_image(image_url, threshold=0, store=True)
+                print(f"[DEBUG] Image validated and stored successfully")
             except Exception as e:
-                # If image classification fails, log but don't reject (more lenient)
-                print(f"Image validation failed (allowing report): {str(e)}")
+                # If duplicate check fails, allow submission (don't block on technical errors)
+                print(f"[ERROR] Duplicate check failed (allowing submission): {str(e)}")
                 import traceback
                 print(traceback.format_exc())
-                # Continue processing - don't reject on image validation errors
+                # Continue - don't block legitimate reports due to technical issues
 
-        # 3. Image duplicate detection (check independently)
-        if image_url:
-            try:
-                image_dup = storage.is_duplicate_image(image_url, threshold=3, store=False)
-                if image_dup:
-                    result = {
-                        "report_id": report.get("report_id", "unknown"),
-                        "accept": False,
-                        "status": "rejected",
-                        "category": cat,
-                        "department": cat,
-                        "reason": "Duplicate image detected. This image has already been used in another report."
-                    }
-                    dataset.save_report({**report, **result})
-                    return result
-                # Store image hash for future duplicate detection
-                storage.is_duplicate_image(image_url, threshold=3, store=True)
-            except Exception as e:
-                print(f"Image duplicate check failed: {str(e)}")
-                # Continue if duplicate check fails (don't block legitimate reports)
-
-        # 4. Detect urgency using text_rules
-        urgency = detect_urgency(desc)
-        
-        # Map urgency to priority (Issue model accepts: 'low', 'medium', 'high', 'urgent')
-        urgency_map = {
+        urgency = detect_urgency(description)
+        priority = {
             "high": "urgent",
             "medium": "medium",
             "low": "low"
-        }
-        priority = urgency_map.get(urgency, "medium")
+        }.get(urgency, "medium")
         
-        # Return accepted result with all required fields
         result = {
             "report_id": report.get("report_id", "unknown"),
             "accept": True,
             "status": "accepted",
-            "category": cat,
-            "department": cat,  # Department same as category for routing
+            "category": category,
+            "department": category,
             "urgency": urgency,
             "priority": priority,
             "reason": "Report accepted successfully"
         }
+
         dataset.save_report({**report, **result})
         return result
+
     except Exception as e:
-        print(f"Error in classify_report: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        return {
-            "report_id": report.get("report_id", "unknown"),
-            "accept": False,
-            "status": "rejected",
-            "category": "Other",
-            "department": "Other",
-            "reason": f"Processing error: {str(e)}"
-        }
+        return reject(report, f"Processing error: {str(e)}")
+
+
+# ------------------------------------
+# Image validation logic (STRICT & ACCURATE)
+# ------------------------------------
+def image_matches_category(image_url: str, category: str) -> bool:
+    """
+    Check if image matches the detected category.
+    Returns True ONLY if image is clearly related to category.
+    Returns False if image is unrelated or classification fails.
+    """
+    try:
+        image_label = ic.classify_image(image_url)
+        image_label = str(image_label).lower().strip() if image_label else "other"
+        
+        # If classifier completely fails, reject (don't allow unknown images)
+        if not image_label or image_label == "":
+            print(f"Image classification returned empty - rejecting")
+            return False
+        
+        # Get allowed labels and keywords for this category
+        allowed_labels = [lbl.lower() for lbl in IMAGE_TO_CATEGORY_MAP.get(category, [])]
+        category_keywords = [kw.lower() for kw in CATEGORY_KEYWORDS.get(category, [])]
+
+        # If "other" - this means classifier couldn't identify, REJECT it
+        # Don't allow "other" - it means image doesn't match any known category
+        if image_label == "other":
+            print(f"Image classified as 'other' - does not match category '{category}' - rejecting")
+            return False
+
+        # If generic label, also reject (too vague, likely doesn't match)
+        if image_label in GENERIC_IMAGE_LABELS:
+            print(f"Image classified as generic '{image_label}' - does not match category '{category}' - rejecting")
+            return False
+
+        # Method 1: Direct exact match with allowed labels
+        if image_label in allowed_labels:
+            print(f"Image label '{image_label}' exactly matches category '{category}' - accepting")
+            return True
+
+        # Method 2: Check if image label contains any allowed label (substring match)
+        for lbl in allowed_labels:
+            if lbl in image_label or image_label in lbl:
+                print(f"Image label '{image_label}' contains allowed label '{lbl}' for category '{category}' - accepting")
+                return True
+
+        # Method 3: Check if image label contains any category keyword from description
+        for kw in category_keywords:
+            if kw in image_label or image_label in kw:
+                print(f"Image label '{image_label}' matches keyword '{kw}' for category '{category}' - accepting")
+                return True
+
+        # Method 4: Word-level matching (split and check for common words)
+        image_words = set(image_label.split())
+        for lbl in allowed_labels:
+            lbl_words = set(lbl.split())
+            common_words = image_words.intersection(lbl_words)
+            if common_words and len(common_words) > 0:
+                print(f"Image label '{image_label}' shares words with '{lbl}' for category '{category}' - accepting")
+                return True
+
+        # Method 5: Check if any word from image appears in category keywords
+        for word in image_words:
+            if len(word) > 2:  # Only check meaningful words (length > 2)
+                for kw in category_keywords:
+                    if word in kw or kw in word:
+                        print(f"Image word '{word}' matches keyword '{kw}' for category '{category}' - accepting")
+                        return True
+                for lbl in allowed_labels:
+                    if word in lbl or lbl in word:
+                        print(f"Image word '{word}' matches label '{lbl}' for category '{category}' - accepting")
+                        return True
+
+        # If none of the methods match, the image is clearly unrelated
+        print(f"Image label '{image_label}' does NOT match category '{category}' - rejecting")
+        return False
+
+    except Exception as e:
+        # If classification fails completely, REJECT (don't allow unknown)
+        print(f"Image classification error for category '{category}' - rejecting: {str(e)}")
+        return False
+
+
+# ------------------------------------
+# Reject helper
+# ------------------------------------
+def reject(report, reason, category="Other"):
+    result = {
+        "report_id": report.get("report_id", "unknown"),
+        "accept": False,
+        "status": "rejected",
+        "category": category,
+        "department": category,
+        "reason": reason
+    }
+    dataset.save_report({**report, **result})
+    return result
