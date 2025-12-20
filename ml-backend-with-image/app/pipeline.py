@@ -94,11 +94,16 @@ def classify_report(report: dict):
         if is_abusive(description):
             return reject(report, "Abusive language detected", category)
 
-        # STEP 1: Check image against detected category FIRST
+        # STEP 1: Check image against detected category FIRST (BEFORE duplicate check)
         image_url = report.get("image_url")
         if image_url:
-            # First validate image matches the category
-            if not image_matches_category(image_url, category):
+            # CRITICAL: Validate image matches category FIRST
+            # If image doesn't match, reject immediately - don't check duplicates
+            image_matches = image_matches_category(image_url, category)
+            
+            if not image_matches:
+                # Image doesn't match category - reject immediately
+                # Don't check for duplicates if image doesn't even match
                 return reject(
                     report,
                     "Image does not match the issue description. Please provide an image related to the reported category.",
@@ -106,6 +111,7 @@ def classify_report(report: dict):
                 )
             
             # STEP 2: Only check for duplicates if image matches category
+            # We only reach here if image_matches == True
             try:
                 # Check for duplicates with very strict threshold (only exact/near-exact matches)
                 is_dup = storage.is_duplicate_image(image_url, threshold=1, store=False)
@@ -143,47 +149,53 @@ def classify_report(report: dict):
 
 
 # ------------------------------------
-# Image validation logic (FLEXIBLE & ACCURATE)
+# Image validation logic (STRICT & ACCURATE)
 # ------------------------------------
 def image_matches_category(image_url: str, category: str) -> bool:
     """
     Check if image matches the detected category.
-    Returns True if image is related to category, False if clearly unrelated.
+    Returns True ONLY if image is clearly related to category.
+    Returns False if image is unrelated or classification fails.
     """
     try:
         image_label = ic.classify_image(image_url)
         image_label = str(image_label).lower().strip() if image_label else "other"
         
-        # If classifier fails or returns generic, be lenient but still check
-        if not image_label:
-            image_label = "other"
+        # If classifier completely fails, reject (don't allow unknown images)
+        if not image_label or image_label == "":
+            print(f"Image classification returned empty - rejecting")
+            return False
         
         # Get allowed labels and keywords for this category
         allowed_labels = [lbl.lower() for lbl in IMAGE_TO_CATEGORY_MAP.get(category, [])]
         category_keywords = [kw.lower() for kw in CATEGORY_KEYWORDS.get(category, [])]
 
-        # If "other" or generic, check if we can still match with keywords
-        if image_label == "other" or image_label in GENERIC_IMAGE_LABELS:
-            # For generic labels, be more lenient - allow if description is clear
-            # But still try to match with category keywords from description
-            if category_keywords:
-                # If we have category keywords, allow (description is clear enough)
-                return True
-            # If no keywords, still allow (better to accept than reject incorrectly)
-            return True
+        # If "other" - this means classifier couldn't identify, REJECT it
+        # Don't allow "other" - it means image doesn't match any known category
+        if image_label == "other":
+            print(f"Image classified as 'other' - does not match category '{category}' - rejecting")
+            return False
+
+        # If generic label, also reject (too vague, likely doesn't match)
+        if image_label in GENERIC_IMAGE_LABELS:
+            print(f"Image classified as generic '{image_label}' - does not match category '{category}' - rejecting")
+            return False
 
         # Method 1: Direct exact match with allowed labels
         if image_label in allowed_labels:
+            print(f"Image label '{image_label}' exactly matches category '{category}' - accepting")
             return True
 
         # Method 2: Check if image label contains any allowed label (substring match)
         for lbl in allowed_labels:
             if lbl in image_label or image_label in lbl:
+                print(f"Image label '{image_label}' contains allowed label '{lbl}' for category '{category}' - accepting")
                 return True
 
         # Method 3: Check if image label contains any category keyword from description
         for kw in category_keywords:
             if kw in image_label or image_label in kw:
+                print(f"Image label '{image_label}' matches keyword '{kw}' for category '{category}' - accepting")
                 return True
 
         # Method 4: Word-level matching (split and check for common words)
@@ -192,6 +204,7 @@ def image_matches_category(image_url: str, category: str) -> bool:
             lbl_words = set(lbl.split())
             common_words = image_words.intersection(lbl_words)
             if common_words and len(common_words) > 0:
+                print(f"Image label '{image_label}' shares words with '{lbl}' for category '{category}' - accepting")
                 return True
 
         # Method 5: Check if any word from image appears in category keywords
@@ -199,20 +212,21 @@ def image_matches_category(image_url: str, category: str) -> bool:
             if len(word) > 2:  # Only check meaningful words (length > 2)
                 for kw in category_keywords:
                     if word in kw or kw in word:
+                        print(f"Image word '{word}' matches keyword '{kw}' for category '{category}' - accepting")
                         return True
                 for lbl in allowed_labels:
                     if word in lbl or lbl in word:
+                        print(f"Image word '{word}' matches label '{lbl}' for category '{category}' - accepting")
                         return True
 
-        # If none of the methods match, the image is likely unrelated
-        # Return False to reject
+        # If none of the methods match, the image is clearly unrelated
+        print(f"Image label '{image_label}' does NOT match category '{category}' - rejecting")
         return False
 
     except Exception as e:
-        # If classification fails completely, be lenient - allow submission
-        # Don't block users due to technical errors
-        print(f"Image classification error (allowing): {str(e)}")
-        return True
+        # If classification fails completely, REJECT (don't allow unknown)
+        print(f"Image classification error for category '{category}' - rejecting: {str(e)}")
+        return False
 
 
 # ------------------------------------
