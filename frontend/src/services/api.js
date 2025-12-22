@@ -52,19 +52,27 @@ class ApiService {
   }
 
   // ================= ML VALIDATION =================
-  async validateReportWithML(payload) {
-    // Create an AbortController for timeout
-    // ML processing can take time (especially image classification), so use 90 seconds
+  // This method is now non-blocking - if ML backend is slow, it will timeout quickly and return null
+  async validateReportWithML(payload, timeoutMs = 10000) {
+    // Use a short timeout (10 seconds) - if ML backend is slow, skip it
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout for ML processing
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     
     try {
-      const response = await fetch(`${this.mlBaseURL}/submit`, {
+      const fetchPromise = fetch(`${this.mlBaseURL}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal
       });
+      
+      // Race between fetch and timeout
+      const response = await Promise.race([
+        fetchPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
+        )
+      ]);
       
       clearTimeout(timeoutId);
       
@@ -75,41 +83,44 @@ class ApiService {
       try {
         result = JSON.parse(responseText);
       } catch (parseError) {
-        // If JSON parsing fails, it's not a valid response
-        console.error('ML backend returned non-JSON response:', responseText);
-        throw new Error(`ML validation failed: ${response.status} ${response.statusText}. ${responseText}`);
+        console.warn('ML backend returned non-JSON response:', responseText);
+        return null; // Return null instead of throwing
       }
       
-      // If status is not ok, handle the error
+      // If status is not ok, return null (non-blocking)
       if (!response.ok) {
-        // If the result has a status field (like "rejected"), return it
-        // This allows the ML backend to return rejections with proper status codes
-        if (result && result.status) {
-          return result;
+        // Only reject if ML explicitly rejected the report
+        if (result && result.status === 'rejected' && result.accept === false) {
+          return result; // Return rejection so caller can handle it
         }
-        // Otherwise, it's a validation error - throw with detail
-        console.error('ML backend validation error:', result);
-        const errorMsg = result.detail || result.message || `ML validation failed: ${response.status} ${response.statusText}`;
-        throw new Error(errorMsg);
+        // For other errors, just return null (skip ML validation)
+        console.warn('ML backend returned error, skipping validation:', result);
+        return null;
       }
       
-      // Success response (200) - return the result (which may have status: "accepted" or "rejected")
+      // Success response (200) - return the result
       return result;
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Error calling ML backend:', error);
       
-      // Handle specific error types
-      if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-        throw new Error('ML validation timeout: Processing took longer than expected.');
-      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        throw new Error('Network error: Unable to reach ML backend.');
-      } else if (error.message.includes('CORS')) {
-        throw new Error('CORS error: ML backend configuration issue.');
+      // For timeout or network errors, return null (non-blocking)
+      if (error.name === 'AbortError' || error.name === 'TimeoutError' || 
+          error.message === 'TIMEOUT' ||
+          error.message.includes('Failed to fetch') || 
+          error.message.includes('NetworkError')) {
+        console.warn('ML backend timeout or network error, skipping validation');
+        return null; // Return null instead of throwing
       }
       
-      // Re-throw the error so the caller can handle it
-      throw error;
+      // For CORS errors, also return null (non-blocking)
+      if (error.message.includes('CORS')) {
+        console.warn('ML backend CORS error, skipping validation');
+        return null;
+      }
+      
+      // For any other error, return null (non-blocking)
+      console.warn('ML backend error, skipping validation:', error.message);
+      return null;
     }
   }
 

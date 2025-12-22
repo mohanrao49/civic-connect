@@ -249,45 +249,39 @@ const ReportIssue = ({ user }) => {
         longitude: reportData.coordinates[1]
       };
 
-      let mlResult;
+      // ML validation is now completely non-blocking with 10 second timeout
+      // If it times out or fails, we proceed with default category
+      let mlResult = null;
       try {
-        // ML validation with extended timeout (90 seconds)
-        mlResult = await apiService.validateReportWithML(mlPayload);
+        mlResult = await apiService.validateReportWithML(mlPayload, 10000); // 10 second timeout
         console.log('ML validation result:', mlResult);
-        
-        // Check if ML backend rejected the report
-        if (mlResult && (mlResult.accept === false || mlResult.status === 'rejected')) {
-          setIsSubmitting(false);
-          const reason = mlResult.reason || 'Report rejected by validator';
-          toast.error(`Report rejected: ${reason}`);
-          return;
-        }
-        
-        // If accept is false or status is not 'accepted', also reject
-        if (mlResult && (mlResult.accept === false || (mlResult.status && mlResult.status !== 'accepted'))) {
-          setIsSubmitting(false);
-          const reason = mlResult.reason || 'Report rejected by validator';
-          toast.error(`Report rejected: ${reason}`);
-          return;
-        }
-        
-        // Use ML-detected category if available
-        if (mlResult && mlResult.category) {
-          issueData.category = mlResult.category;
-        }
       } catch (mlError) {
-        console.error('ML validation error:', mlError);
-        // ML service failed - allow report to proceed with default category
-        // This ensures users can still submit reports even if ML backend is slow/down
-        console.warn('ML validation failed, proceeding with default category:', mlError.message);
-        
-        // Use default category if ML fails
+        // This should rarely happen now since validateReportWithML returns null instead of throwing
+        console.warn('ML validation error (non-blocking):', mlError.message);
+        mlResult = null;
+      }
+      
+      // Only check for explicit rejections from ML backend
+      if (mlResult && mlResult.accept === false && mlResult.status === 'rejected') {
+        setIsSubmitting(false);
+        const reason = mlResult.reason || 'Report rejected by validator';
+        toast.error(`Report rejected: ${reason}`);
+        return;
+      }
+      
+      // Use ML-detected category if available, otherwise use default
+      if (mlResult && mlResult.category) {
+        issueData.category = mlResult.category;
+        console.log('Using ML-detected category:', mlResult.category);
+      } else {
+        // Default category if ML validation failed or timed out
         if (!issueData.category) {
           issueData.category = 'Other';
         }
-        
-        // Show a warning toast but don't block submission
-        toast.warning('Category detection unavailable. Using default category. Report will still be submitted.');
+        // Only show warning if ML was attempted but failed (not if it was skipped)
+        if (mlResult === null) {
+          console.log('ML validation skipped (timeout/unavailable), using default category');
+        }
       }
 
       // 2) Submit to backend only if accepted
