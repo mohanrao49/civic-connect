@@ -52,76 +52,112 @@ class ApiService {
   }
 
   // ================= ML VALIDATION =================
-  // This method is now non-blocking - if ML backend is slow, it will timeout quickly and return null
-  async validateReportWithML(payload, timeoutMs = 10000) {
-    // Use a short timeout (10 seconds) - if ML backend is slow, skip it
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    
-    try {
-      const fetchPromise = fetch(`${this.mlBaseURL}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      
-      // Race between fetch and timeout
-      const response = await Promise.race([
-        fetchPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
-        )
-      ]);
-      
-      clearTimeout(timeoutId);
-      
-      // Read response as text first, then parse as JSON
-      const responseText = await response.text();
-      let result;
-      
+  // This method is now non-blocking - if ML backend is slow, it will timeout and return null
+  // Increased timeout to 45 seconds to allow for Render cold starts
+  async validateReportWithML(payload, timeoutMs = 45000, retries = 2) {
+    // Use a longer timeout (45 seconds) to allow for Render free tier cold starts
+    // Retry logic with exponential backoff
+    for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.warn('ML backend returned non-JSON response:', responseText);
-        return null; // Return null instead of throwing
-      }
-      
-      // If status is not ok, return null (non-blocking)
-      if (!response.ok) {
-        // Only reject if ML explicitly rejected the report
-        if (result && result.status === 'rejected' && result.accept === false) {
-          return result; // Return rejection so caller can handle it
+        if (attempt > 0) {
+          // Exponential backoff: wait 2^attempt seconds before retry
+          const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
+          console.log(`ML validation retry attempt ${attempt}, waiting ${backoffMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
         }
-        // For other errors, just return null (skip ML validation)
-        console.warn('ML backend returned error, skipping validation:', result);
-        return null;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        try {
+          const fetchPromise = fetch(`${this.mlBaseURL}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+          
+          // Race between fetch and timeout
+          const response = await Promise.race([
+            fetchPromise,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
+            )
+          ]);
+          
+          clearTimeout(timeoutId);
+      
+          // Read response as text first, then parse as JSON
+          const responseText = await response.text();
+          let result;
+          
+          try {
+            result = JSON.parse(responseText);
+          } catch (parseError) {
+            console.warn('ML backend returned non-JSON response:', responseText);
+            // If this is the last attempt, return null
+            if (attempt === retries) return null;
+            continue; // Retry on next attempt
+          }
+          
+          // If status is not ok, check if we should retry
+          if (!response.ok) {
+            // Only reject if ML explicitly rejected the report
+            if (result && result.status === 'rejected' && result.accept === false) {
+              return result; // Return rejection so caller can handle it
+            }
+            // For 5xx errors, retry if we have attempts left
+            if (response.status >= 500 && response.status < 600 && attempt < retries) {
+              console.warn(`ML backend returned ${response.status}, retrying...`);
+              continue;
+            }
+            // For other errors, just return null (skip ML validation)
+            console.warn('ML backend returned error, skipping validation:', result);
+            return null;
+          }
+          
+          // Success response (200) - return the result
+          console.log('ML validation successful on attempt', attempt + 1);
+          return result;
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          
+          // For timeout or network errors, retry if we have attempts left
+          if ((fetchError.name === 'AbortError' || fetchError.name === 'TimeoutError' || 
+              fetchError.message === 'TIMEOUT' ||
+              fetchError.message.includes('Failed to fetch') || 
+              fetchError.message.includes('NetworkError')) && attempt < retries) {
+            console.warn(`ML backend timeout/network error on attempt ${attempt + 1}, retrying...`);
+            continue; // Retry on next attempt
+          }
+          
+          // If this is the last attempt, return null
+          if (attempt === retries) {
+            console.warn('ML backend timeout or network error after all retries, skipping validation');
+            return null;
+          }
+        }
+      } catch (error) {
+        // For CORS errors or other errors, don't retry
+        if (error.message.includes('CORS')) {
+          console.warn('ML backend CORS error, skipping validation');
+          return null;
+        }
+        
+        // If this is the last attempt, return null
+        if (attempt === retries) {
+          console.warn('ML backend error after all retries, skipping validation:', error.message);
+          return null;
+        }
+        
+        // Otherwise, continue to next retry
+        continue;
       }
-      
-      // Success response (200) - return the result
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      
-      // For timeout or network errors, return null (non-blocking)
-      if (error.name === 'AbortError' || error.name === 'TimeoutError' || 
-          error.message === 'TIMEOUT' ||
-          error.message.includes('Failed to fetch') || 
-          error.message.includes('NetworkError')) {
-        console.warn('ML backend timeout or network error, skipping validation');
-        return null; // Return null instead of throwing
-      }
-      
-      // For CORS errors, also return null (non-blocking)
-      if (error.message.includes('CORS')) {
-        console.warn('ML backend CORS error, skipping validation');
-        return null;
-      }
-      
-      // For any other error, return null (non-blocking)
-      console.warn('ML backend error, skipping validation:', error.message);
-      return null;
     }
+    
+    // If we get here, all retries failed
+    console.warn('ML validation failed after all retries');
+    return null;
   }
 
   // ================= AUTH =================

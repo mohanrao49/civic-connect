@@ -249,11 +249,12 @@ const ReportIssue = ({ user }) => {
         longitude: reportData.coordinates[1]
       };
 
-      // ML validation is now completely non-blocking with 10 second timeout
-      // If it times out or fails, we proceed with default category
+      // ML validation is now completely non-blocking with 45 second timeout and retries
+      // If it times out or fails after retries, we proceed with default category
       let mlResult = null;
       try {
-        mlResult = await apiService.validateReportWithML(mlPayload, 10000); // 10 second timeout
+        // 45 second timeout with 2 retries to handle Render cold starts
+        mlResult = await apiService.validateReportWithML(mlPayload, 45000, 2);
         console.log('ML validation result:', mlResult);
       } catch (mlError) {
         // This should rarely happen now since validateReportWithML returns null instead of throwing

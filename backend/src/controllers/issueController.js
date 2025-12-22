@@ -251,9 +251,10 @@ class IssueController {
             longitude
           };
 
-          // Set a timeout for ML validation (10 seconds) - use Promise.race for compatibility
+          // Set a timeout for ML validation (45 seconds) - increased for Render cold starts
+          // Use Promise.race for compatibility
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('ML_TIMEOUT')), 10000)
+            setTimeout(() => reject(new Error('ML_TIMEOUT')), 45000)
           );
 
           try {
