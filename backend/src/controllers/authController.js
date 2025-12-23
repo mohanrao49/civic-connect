@@ -418,8 +418,10 @@ class AuthController {
       if (!tempUser) {
         // Create temporary user record ONLY for OTP storage
         // This user will be activated during registration
+        // Note: name is required by schema, so we use a placeholder that will be updated during registration
         tempUser = new User({
           mobile,
+          name: 'Pending Registration', // Placeholder name, will be updated during registration
           role: 'citizen',
           isActive: false, // Not active until registration completes
           isVerified: false
