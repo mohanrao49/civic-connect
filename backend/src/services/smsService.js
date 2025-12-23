@@ -70,14 +70,15 @@ class SmsService {
 
     const message = `Your CivicConnect OTP is ${otp}. Valid for 5 minutes. Do not share this OTP with anyone.`;
 
-    // In development or if SMS not configured, return OTP in response
+    // In development or if SMS not configured, log OTP but don't return it
+    // OTP should NEVER be returned in API response - only sent via SMS
     if (process.env.NODE_ENV === 'development' || !this.isConfigured) {
-      console.log(`[DEV MODE] OTP for ${mobile}: ${otp}`);
+      console.log(`[DEV MODE] OTP for ${mobile}: ${otp} - Check server logs only`);
       return { 
         success: true, 
         devMode: true,
-        message: 'OTP sent (dev mode - check console/logs)',
-        otp: otp // Return OTP in dev mode
+        message: 'OTP logged to server (dev mode - check server logs)'
+        // DO NOT return OTP - it should only be in server logs
       };
     }
 

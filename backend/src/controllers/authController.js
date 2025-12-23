@@ -113,23 +113,23 @@ class AuthController {
       // Send OTP via SMS
       const smsResult = await smsService.sendOTP(mobile, otp, name || 'User');
       
-      // In development mode or if SMS not configured, return OTP
-      if (smsResult.devMode || !smsResult.success) {
-        console.log('SMS not configured or dev mode - returning OTP:', otp);
-        return res.json({
-          success: true,
-          message: 'OTP sent successfully',
-          data: {
-            otp: otp,
-            expiresIn: '5 minutes',
-            devMode: true
-          }
+      // NEVER return OTP in response - only send via SMS
+      if (smsResult.devMode) {
+        console.log(`[DEV MODE] OTP for ${mobile}: ${otp} - Check server logs only`);
+      }
+
+      if (!smsResult.success && !smsResult.devMode) {
+        console.error('SMS sending failed:', smsResult.error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send OTP. Please try again or contact support.',
+          error: 'SMS service unavailable'
         });
       }
 
       res.json({
         success: true,
-        message: 'OTP sent successfully to your mobile',
+        message: 'OTP has been sent to your mobile. Please check your phone.',
         data: {
           expiresIn: '5 minutes'
         }
@@ -442,23 +442,26 @@ class AuthController {
       
       console.log('SMS result:', { success: smsResult.success, devMode: smsResult.devMode });
 
-      // In development mode or if SMS not configured, return OTP in response
-      if (smsResult.devMode || !smsResult.success) {
-        return res.json({
-          success: true,
-          message: `OTP sent successfully to ${mobile}`,
-          data: {
-            otp: otp, // Return OTP in dev mode
-            expiresIn: '5 minutes',
-            devMode: true,
-            mobile: mobile
-          }
+      // NEVER return OTP in response - it should only be sent via SMS
+      // In dev mode, OTP is logged to server console only
+      if (smsResult.devMode) {
+        console.log(`[DEV MODE] OTP for ${mobile}: ${otp} - Check server logs`);
+      }
+
+      // Always return success message without OTP
+      // If SMS failed, still don't return OTP - user should check their phone or contact support
+      if (!smsResult.success && !smsResult.devMode) {
+        console.error('SMS sending failed:', smsResult.error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send OTP. Please try again or contact support.',
+          error: 'SMS service unavailable'
         });
       }
       
       return res.json({
         success: true,
-        message: `OTP sent successfully to ${mobile}`,
+        message: `OTP has been sent to ${mobile}. Please check your phone.`,
         data: {
           expiresIn: '5 minutes',
           mobile: mobile
@@ -602,23 +605,23 @@ class AuthController {
         
         console.log('SMS result:', { success: smsResult.success, devMode: smsResult.devMode });
         
-        // In development mode or if SMS not configured, return OTP in response
-        if (smsResult.devMode || !smsResult.success) {
-          return res.json({
-            success: true,
-            message: `OTP sent successfully to ${phoneNumber}`,
-            data: {
-              otp: otp,
-              expiresIn: '5 minutes',
-              devMode: true,
-              mobile: phoneNumber
-            }
+        // NEVER return OTP in response - only send via SMS
+        if (smsResult.devMode) {
+          console.log(`[DEV MODE] OTP for ${phoneNumber}: ${otp} - Check server logs only`);
+        }
+
+        if (!smsResult.success && !smsResult.devMode) {
+          console.error('SMS sending failed:', smsResult.error);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to send OTP. Please try again or contact support.',
+            error: 'SMS service unavailable'
           });
         }
         
         return res.json({
           success: true,
-          message: `OTP sent successfully to ${phoneNumber}`,
+          message: `OTP has been sent to ${phoneNumber}. Please check your phone.`,
           data: {
             expiresIn: '5 minutes',
             mobile: phoneNumber

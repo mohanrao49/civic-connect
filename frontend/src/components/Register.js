@@ -64,16 +64,12 @@ const Register = () => {
     setIsLoading(true);
     try {
       // Send OTP for mobile verification (registration flow)
-      const response = await apiService.sendOtpToMobileForRegistration(mobile);
+      await apiService.sendOtpToMobileForRegistration(mobile);
       setIsOtpSent(true);
       setStep(2); // Move to OTP verification step
       
-      // In development mode, show the OTP
-      if (response.data && response.data.otp) {
-        toast.success(`OTP sent to ${mobile}. Dev OTP: ${response.data.otp}`);
-      } else {
-        toast.success(`OTP sent to ${mobile}. Please check your phone.`);
-      }
+      // OTP is sent via SMS - never displayed on screen
+      toast.success(`OTP sent to ${mobile}. Please check your phone for the OTP.`);
     } catch (error) {
       toast.error(`Error sending OTP: ${error.message}`);
     } finally {
