@@ -105,6 +105,23 @@ class SmsService {
   // Send via Twilio
   async sendViaTwilio(mobile, message) {
     try {
+      // Check if Twilio client is initialized
+      if (!this.client) {
+        console.error('Twilio client not initialized');
+        return { 
+          success: false, 
+          error: 'Twilio client not initialized. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.' 
+        };
+      }
+
+      if (!this.fromNumber) {
+        console.error('Twilio phone number not configured');
+        return { 
+          success: false, 
+          error: 'Twilio phone number not configured. Check TWILIO_PHONE_NUMBER.' 
+        };
+      }
+
       // Format mobile number (add country code if needed)
       let toNumber = mobile;
       if (!toNumber.startsWith('+')) {
@@ -113,17 +130,37 @@ class SmsService {
         toNumber = `+${countryCode}${mobile}`;
       }
 
+      console.log(`Attempting to send SMS via Twilio: from ${this.fromNumber} to ${toNumber}`);
+
       const result = await this.client.messages.create({
         body: message,
         from: this.fromNumber,
         to: toNumber
       });
 
-      console.log('SMS sent via Twilio:', result.sid);
+      console.log('SMS sent via Twilio successfully:', result.sid);
       return { success: true, messageId: result.sid };
     } catch (error) {
-      console.error('Twilio SMS Error:', error);
-      return { success: false, error: error.message };
+      console.error('Twilio SMS Error Details:', {
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        moreInfo: error.moreInfo
+      });
+      
+      // Provide more specific error messages
+      let errorMsg = error.message || 'Unknown Twilio error';
+      if (error.code === 21211) {
+        errorMsg = 'Invalid phone number format';
+      } else if (error.code === 21608) {
+        errorMsg = 'Twilio phone number not verified (trial account restriction)';
+      } else if (error.code === 20003) {
+        errorMsg = 'Twilio authentication failed. Check your Account SID and Auth Token.';
+      } else if (error.code === 21408) {
+        errorMsg = 'Permission denied. Check your Twilio account permissions.';
+      }
+      
+      return { success: false, error: errorMsg, details: error.code };
     }
   }
 

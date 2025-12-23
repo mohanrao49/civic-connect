@@ -460,13 +460,34 @@ class AuthController {
         });
       }
 
-      // If SMS failed (and not dev mode), return error
+      // If SMS failed (and not dev mode), return error with details
       if (!smsResult.success) {
-        console.error('SMS sending failed:', smsResult.error);
+        console.error('SMS sending failed:', {
+          error: smsResult.error,
+          provider: process.env.SMS_PROVIDER,
+          mobile: mobile,
+          errorDetails: smsResult.details
+        });
+        
+        // Provide more helpful error message
+        let errorMessage = 'Failed to send OTP. ';
+        if (smsResult.error) {
+          if (smsResult.error.includes('not found') || smsResult.error.includes('invalid')) {
+            errorMessage += 'Please check your SMS provider credentials.';
+          } else if (smsResult.error.includes('unauthorized') || smsResult.error.includes('authentication')) {
+            errorMessage += 'SMS provider authentication failed. Please check your credentials.';
+          } else {
+            errorMessage += smsResult.error;
+          }
+        } else {
+          errorMessage += 'Please try again or contact support.';
+        }
+        
         return res.status(500).json({
           success: false,
-          message: 'Failed to send OTP. Please try again or contact support.',
-          error: smsResult.error || 'SMS service unavailable'
+          message: errorMessage,
+          error: smsResult.error || 'SMS service unavailable',
+          hint: 'Check server logs for detailed error information'
         });
       }
       
