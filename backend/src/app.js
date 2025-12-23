@@ -124,6 +124,7 @@ if (enableRateLimit) {
     legacyHeaders: false,
   });
   app.use('/api/auth/send-otp', otpLimiter);
+  app.use('/api/auth/send-otp-for-registration', otpLimiter);
 }
 
 // Body parsing middleware

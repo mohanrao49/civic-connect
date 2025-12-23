@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../middleware/auth');
 const emailService = require('../services/emailService');
+const smsService = require('../services/smsService');
 const notificationService = require('../services/notificationService');
 
 class AuthController {
@@ -44,98 +45,206 @@ class AuthController {
     return Object.keys(clean).length > 0 ? clean : null;
   }
 
-  // Register a new user
-  async register(req, res) {
+  // Send OTP for registration (stores registration data temporarily)
+  async sendOTPForRegistration(req, res) {
     try {
-      const { name, aadhaarNumber, mobile, email, password, address } = req.body;
+      const { name, aadhaarNumber, mobile, address, coordinates, password } = req.body;
+
+      if (!mobile || mobile.length !== 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid mobile number is required'
+        });
+      }
+
+      if (!password || password.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 6 characters'
+        });
+      }
 
       // Check if user already exists
-      const existingUser = await User.findOne({
-        $or: [
-          ...(aadhaarNumber ? [{ aadhaarNumber }] : []),
-          ...(email ? [{ email }] : []),
-          ...(mobile ? [{ mobile }] : [])
-        ]
-      });
-
-      // Prevent Aadhaar conflicts with other accounts
-      if (aadhaarNumber) {
-        const aadhaarConflict = await User.findOne({
-          aadhaarNumber,
-          ...(existingUser ? { _id: { $ne: existingUser._id } } : {})
+      const existingUser = await User.findOne({ mobile });
+      if (existingUser && existingUser.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'User already registered with this mobile number'
         });
-        if (aadhaarConflict) {
+      }
+
+      // Create or update temporary user for registration
+      let user = existingUser;
+      if (!user) {
+        user = new User({
+          mobile,
+          role: 'citizen',
+          isActive: false,
+          isVerified: false
+        });
+      }
+
+      // Store registration data temporarily (we'll use a custom field or update user)
+      // For now, we'll store it in the user object and update it during final registration
+      if (name) user.name = name;
+      if (aadhaarNumber) user.aadhaarNumber = aadhaarNumber;
+      if (address) {
+        if (typeof address === 'string') {
+          user.address = { street: address };
+        } else {
+          user.address = this.cleanAddress(address) || { street: address };
+        }
+        if (coordinates && Array.isArray(coordinates) && coordinates.length === 2) {
+          if (!user.address) user.address = {};
+          user.address.coordinates = {
+            latitude: coordinates[0],
+            longitude: coordinates[1]
+          };
+        }
+      }
+      // Store password temporarily (will be hashed on save)
+      user.password = password;
+
+      // Generate OTP
+      const otp = user.generateOTP();
+      console.log('Generated OTP for registration:', otp);
+      await user.save();
+
+      // Send OTP via SMS
+      const smsResult = await smsService.sendOTP(mobile, otp, name || 'User');
+      
+      // In development mode or if SMS not configured, return OTP
+      if (smsResult.devMode || !smsResult.success) {
+        console.log('SMS not configured or dev mode - returning OTP:', otp);
+        return res.json({
+          success: true,
+          message: 'OTP sent successfully',
+          data: {
+            otp: otp,
+            expiresIn: '5 minutes',
+            devMode: true
+          }
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'OTP sent successfully to your mobile',
+        data: {
+          expiresIn: '5 minutes'
+        }
+      });
+    } catch (error) {
+      console.error('Send OTP for registration error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error sending OTP',
+        error: error.message
+      });
+    }
+  }
+
+  // Register a new user - ONLY called after OTP verification
+  // This method checks for duplicates and creates the final user record
+  async register(req, res) {
+    try {
+      const { name, aadhaarNumber, mobile, email, password, address, coordinates } = req.body;
+
+      // Mobile number is required
+      if (!mobile) {
+        return res.status(400).json({
+          success: false,
+          message: 'Mobile number is required for registration'
+        });
+      }
+
+      // Find the temporary user created during OTP verification
+      const tempUser = await User.findOne({ mobile, isActive: false, isVerified: true });
+      if (!tempUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Mobile number not verified. Please verify your mobile number with OTP first.'
+        });
+      }
+
+      // NOW check for duplicates - only at registration time, not during OTP
+      // Check if mobile is already registered (shouldn't happen, but double-check)
+      const existingActiveUser = await User.findOne({ mobile, isActive: true });
+      if (existingActiveUser && existingActiveUser._id.toString() !== tempUser._id.toString()) {
+        return res.status(400).json({
+          success: false,
+          message: 'This mobile number is already registered. Please login instead.'
+        });
+      }
+
+      // Check for Aadhaar conflicts with other accounts
+      if (aadhaarNumber) {
+        const existingAadhaarUser = await User.findOne({
+          aadhaarNumber,
+          _id: { $ne: tempUser._id },
+          isActive: true
+        });
+        if (existingAadhaarUser) {
           return res.status(400).json({
             success: false,
-            message: 'Aadhaar number is already linked to another account'
+            message: 'Aadhaar number is already registered with another account.'
           });
         }
       }
 
-      if (existingUser) {
-        // Allow upgrading an existing lightweight account (e.g., created via OTP mobile flow)
-        // If Aadhaar is already linked to another user, prevent conflict
-        if (
-          aadhaarNumber &&
-          existingUser.aadhaarNumber &&
-          existingUser.aadhaarNumber !== aadhaarNumber
-        ) {
+      // Use tempUser as the base (it was verified above)
+      let user = tempUser;
+      
+      // Check if user already exists with different identifiers (excluding tempUser)
+      const existingUser = await User.findOne({
+        $or: [
+          ...(aadhaarNumber ? [{ aadhaarNumber }] : []),
+          ...(email ? [{ email }] : [])
+        ],
+        _id: { $ne: tempUser._id }
+      });
+
+      // Prevent Aadhaar conflicts with other accounts
+      if (aadhaarNumber && existingUser && existingUser.aadhaarNumber === aadhaarNumber) {
+        if (existingUser.isActive && existingUser.password) {
           return res.status(400).json({
             success: false,
-            message: 'Aadhaar number is already linked to another account'
+            message: 'Aadhaar number is already registered. Please login instead.'
           });
         }
-
-        existingUser.name = name || existingUser.name;
-        if (aadhaarNumber) existingUser.aadhaarNumber = aadhaarNumber;
-        if (mobile) existingUser.mobile = mobile;
-        if (email) existingUser.email = email;
-        if (password) existingUser.password = password;
+      }
+      
+      // Update tempUser with final registration data
+      if (user) {
+        // This is completing registration for the temporary user
+        user.name = name || user.name;
+        if (aadhaarNumber) user.aadhaarNumber = aadhaarNumber;
+        if (email) user.email = email;
+        if (password) user.password = password;
+        user.isActive = true;
+        user.isVerified = true;
+        
+        // Update address
         if (address) {
-          // Always clean and set address properly to avoid undefined coordinate issues
-          let cleanAddress;
           if (typeof address === 'string') {
-            // Convert existing address to plain object to avoid Mongoose subdocument issues
-            const existingAddr = existingUser.address ? 
-              (existingUser.address.toObject ? existingUser.address.toObject() : existingUser.address) : 
-              null;
-            const existingClean = this.cleanAddress(existingAddr) || {};
-            cleanAddress = { ...existingClean, street: address };
+            user.address = { street: address };
           } else {
-            // Convert existing address to plain object to avoid Mongoose subdocument issues
-            const existingAddr = existingUser.address ? 
-              (existingUser.address.toObject ? existingUser.address.toObject() : existingUser.address) : 
-              null;
-            const existingClean = this.cleanAddress(existingAddr) || {};
-            const newClean = this.cleanAddress(address) || {};
-            cleanAddress = { ...existingClean, ...newClean };
-          }
-          
-          // Final safety check: remove coordinates if they're invalid or undefined
-          if (cleanAddress && cleanAddress.coordinates) {
-            const lat = cleanAddress.coordinates.latitude;
-            const lng = cleanAddress.coordinates.longitude;
-            if (lat === undefined || lng === undefined || 
-                lat === null || lng === null ||
-                typeof lat !== 'number' || typeof lng !== 'number' ||
-                isNaN(lat) || isNaN(lng)) {
-              delete cleanAddress.coordinates;
+            const cleanAddress = this.cleanAddress(address);
+            if (cleanAddress) {
+              user.address = cleanAddress;
             }
           }
-          
-          // Use set() to properly update the address and avoid validation issues
-          if (cleanAddress && Object.keys(cleanAddress).length > 0) {
-            existingUser.set('address', cleanAddress);
-          } else if (cleanAddress === null) {
-            // If address is completely empty, unset it
-            existingUser.set('address', undefined);
+          if (coordinates && Array.isArray(coordinates) && coordinates.length === 2) {
+            if (!user.address) user.address = {};
+            user.address.coordinates = {
+              latitude: coordinates[0],
+              longitude: coordinates[1]
+            };
           }
         }
-        existingUser.role = 'citizen';
-        existingUser.isVerified = existingUser.isVerified || false;
-
+        
         try {
-          await existingUser.save();
+          await user.save();
         } catch (err) {
           if (err && err.code === 11000) {
             const dupField = Object.keys(err.keyPattern || {})[0] || 'field';
@@ -147,89 +256,19 @@ class AuthController {
           throw err;
         }
 
-        const token = generateToken(existingUser._id);
-        const refreshToken = generateRefreshToken(existingUser._id);
+        const token = generateToken(user._id);
+        const refreshToken = generateRefreshToken(user._id);
 
         return res.status(201).json({
           success: true,
           message: 'User registered successfully',
           data: {
-            user: existingUser.getProfile(),
+            user: user.getProfile(),
             token,
             refreshToken
           }
         });
       }
-
-      // Create new user
-      const userData = {
-        name,
-        aadhaarNumber,
-        mobile,
-        role: 'citizen'
-      };
-      
-      // Only include optional fields if they are provided
-      if (email) userData.email = email;
-      if (password) userData.password = password;
-      
-      const user = new User(userData);
-
-      if (address) {
-        // Clean address object before setting
-        if (typeof address === 'string') {
-          user.address = { street: address };
-        } else {
-          const cleanAddress = this.cleanAddress(address);
-          if (cleanAddress) {
-            user.address = cleanAddress;
-          }
-        }
-      }
-
-      try {
-        await user.save();
-      } catch (err) {
-        if (err && err.code === 11000) {
-          const dupField = Object.keys(err.keyPattern || {})[0] || 'field';
-          return res.status(400).json({
-            success: false,
-            message: `User already exists with this ${dupField}`
-          });
-        }
-        throw err;
-      }
-
-      // Generate OTP for email verification
-      if (email) {
-        try {
-          const otp = user.generateOTP();
-          await user.save();
-
-          // Send OTP email (non-blocking - don't fail registration if email fails)
-          const emailResult = await emailService.sendOTP(email, otp, name);
-          if (!emailResult.success) {
-            console.warn('Failed to send OTP email, but registration continues:', emailResult.error);
-          }
-        } catch (emailError) {
-          // Log but don't fail registration if email service fails
-          console.error('Error sending OTP email (non-critical):', emailError);
-        }
-      }
-
-      // Generate tokens
-      const token = generateToken(user._id);
-      const refreshToken = generateRefreshToken(user._id);
-
-      res.status(201).json({
-        success: true,
-        message: 'User registered successfully',
-        data: {
-          user: user.getProfile(),
-          token,
-          refreshToken
-        }
-      });
     } catch (error) {
       console.error('Registration error:', error);
       console.error('Registration error stack:', error.stack);
@@ -257,20 +296,22 @@ class AuthController {
   // Login user
   async login(req, res) {
     try {
-      const { email, mobile, employeeId, password } = req.body;
+      const { email, mobile, employeeId, aadhaarNumber, password } = req.body;
 
-      // Find user by email, mobile, or employeeId
+      // Find user by email, mobile, employeeId, or aadhaarNumber
       const query = {};
       if (employeeId) {
         query.employeeId = employeeId;
       } else if (email) {
         query.email = email;
+      } else if (aadhaarNumber) {
+        query.aadhaarNumber = aadhaarNumber;
       } else if (mobile) {
         query.mobile = mobile;
       } else {
         return res.status(400).json({
           success: false,
-          message: 'Email, mobile, or employee ID is required'
+          message: 'Email, mobile, Aadhaar number, or employee ID is required'
         });
       }
 
@@ -287,11 +328,26 @@ class AuthController {
       if (!user.isActive) {
         return res.status(401).json({
           success: false,
-          message: 'Account is deactivated'
+          message: 'Account is deactivated or registration incomplete'
         });
       }
 
-      // Verify password
+      // Verify password - password is required for citizen login
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password is required'
+        });
+      }
+
+      // Check if user has a password set
+      if (!user.password) {
+        return res.status(401).json({
+          success: false,
+          message: 'Password not set. Please complete your registration.'
+        });
+      }
+
       const isPasswordValid = await user.comparePassword(password);
       if (!isPasswordValid) {
         return res.status(401).json({
@@ -328,12 +384,167 @@ class AuthController {
     }
   }
 
-  // Send OTP
+  // Send OTP for Registration - NO user existence check
+  // This method sends OTP without checking if user exists
+  // It only prevents sending OTP if mobile is already registered (active user)
+  async sendOtpForRegistration(req, res) {
+    try {
+      const { mobile } = req.body;
+      
+      console.log('Send OTP for Registration - mobile:', mobile);
+
+      if (!mobile || mobile.length !== 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid 10-digit mobile number is required'
+        });
+      }
+
+      // ONLY check if mobile is already registered (active user)
+      // Do NOT check if user exists - we'll create temporary record for OTP
+      const existingActiveUser = await User.findOne({ mobile, isActive: true });
+      if (existingActiveUser) {
+        console.log('Mobile already registered:', mobile);
+        return res.status(400).json({
+          success: false,
+          message: 'This mobile number is already registered. Please login instead.'
+        });
+      }
+
+      // Find or create temporary inactive user for OTP storage
+      // This allows OTP to be sent even if user doesn't exist yet
+      let tempUser = await User.findOne({ mobile, isActive: false });
+      
+      if (!tempUser) {
+        // Create temporary user record ONLY for OTP storage
+        // This user will be activated during registration
+        tempUser = new User({
+          mobile,
+          role: 'citizen',
+          isActive: false, // Not active until registration completes
+          isVerified: false
+        });
+        console.log('✅ Created temporary user record for OTP storage');
+      } else {
+        console.log('✅ Using existing temporary user for OTP');
+      }
+
+      // Generate and store OTP
+      const otp = tempUser.generateOTP();
+      console.log('Generated OTP for registration:', otp);
+      await tempUser.save();
+
+      // Send OTP via SMS
+      console.log(`Sending OTP to ${mobile} for registration`);
+      const smsResult = await smsService.sendOTP(mobile, otp, 'User');
+      
+      console.log('SMS result:', { success: smsResult.success, devMode: smsResult.devMode });
+
+      // In development mode or if SMS not configured, return OTP in response
+      if (smsResult.devMode || !smsResult.success) {
+        return res.json({
+          success: true,
+          message: `OTP sent successfully to ${mobile}`,
+          data: {
+            otp: otp, // Return OTP in dev mode
+            expiresIn: '5 minutes',
+            devMode: true,
+            mobile: mobile
+          }
+        });
+      }
+      
+      return res.json({
+        success: true,
+        message: `OTP sent successfully to ${mobile}`,
+        data: {
+          expiresIn: '5 minutes',
+          mobile: mobile
+        }
+      });
+    } catch (error) {
+      console.error('Send OTP for Registration error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error sending OTP',
+        error: error.message
+      });
+    }
+  }
+
+  // Verify OTP for Registration - works with temporary inactive users
+  async verifyOtpForRegistration(req, res) {
+    try {
+      const { mobile, otp } = req.body;
+      
+      console.log('Verify OTP for Registration - mobile:', mobile);
+
+      if (!mobile || mobile.length !== 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid 10-digit mobile number is required'
+        });
+      }
+
+      if (!otp || otp.length !== 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid 6-digit OTP is required'
+        });
+      }
+
+      // Find temporary user (inactive) created during OTP sending
+      const tempUser = await User.findOne({ mobile, isActive: false });
+      
+      if (!tempUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'No OTP found for this mobile number. Please request a new OTP.'
+        });
+      }
+
+      // Verify OTP
+      const isOTPValid = tempUser.verifyOTP(otp);
+      console.log('OTP verification result:', isOTPValid);
+      
+      if (!isOTPValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired OTP. Please request a new OTP.'
+        });
+      }
+
+      // Mark mobile as verified (but user is still inactive)
+      tempUser.isVerified = true;
+      tempUser.otp = undefined; // Clear OTP after verification
+      await tempUser.save();
+      
+      console.log('✅ Mobile verified for registration - tempUser ID:', tempUser._id);
+
+      return res.json({
+        success: true,
+        message: 'Mobile number verified successfully. You can now complete registration.',
+        data: {
+          mobile: mobile,
+          verified: true
+        }
+      });
+    } catch (error) {
+      console.error('Verify OTP for Registration error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error verifying OTP',
+        error: error.message
+      });
+    }
+  }
+
+  // Send OTP (for login/other flows - user must exist)
   async sendOTP(req, res) {
     try {
       const { aadhaarNumber, mobile, email } = req.body;
       
-      console.log('Send OTP request:', { aadhaarNumber, mobile, email });
+      console.log('Send OTP request (login/other):', { aadhaarNumber, mobile, email });
 
       if (!aadhaarNumber && !mobile && !email) {
         return res.status(400).json({
@@ -342,6 +553,7 @@ class AuthController {
         });
       }
 
+      // For login/other flows - user MUST exist
       let user;
       
       if (aadhaarNumber) {
@@ -353,14 +565,13 @@ class AuthController {
       }
 
       if (!user) {
-        // Only send OTP to registered users
         return res.status(404).json({
           success: false,
           message: 'User not found. Please register before proceeding.'
         });
-      } else {
-        console.log('Existing user found with ID:', user._id);
       }
+
+      console.log('Existing user found with ID:', user._id);
 
       // Generate OTP
       const otp = user.generateOTP();
@@ -379,17 +590,36 @@ class AuthController {
         }
       }
 
-      // For mobile, you would integrate with SMS service
-      // For now, we'll return the OTP in development
-      console.log('NODE_ENV:', process.env.NODE_ENV);
+      // Send OTP via SMS for mobile
       if (mobile || aadhaarNumber) {
-        console.log('Returning OTP in development mode:', otp);
+        const phoneNumber = mobile || aadhaarNumber;
+        const userName = user.name || 'User';
+        
+        console.log(`Sending OTP to ${phoneNumber} for user: ${userName}`);
+        const smsResult = await smsService.sendOTP(phoneNumber, otp, userName);
+        
+        console.log('SMS result:', { success: smsResult.success, devMode: smsResult.devMode });
+        
+        // In development mode or if SMS not configured, return OTP in response
+        if (smsResult.devMode || !smsResult.success) {
+          return res.json({
+            success: true,
+            message: `OTP sent successfully to ${phoneNumber}`,
+            data: {
+              otp: otp,
+              expiresIn: '5 minutes',
+              devMode: true,
+              mobile: phoneNumber
+            }
+          });
+        }
+        
         return res.json({
           success: true,
-          message: 'OTP sent successfully',
+          message: `OTP sent successfully to ${phoneNumber}`,
           data: {
-            otp: otp, // Always return OTP for mobile in development
-            expiresIn: '5 minutes'
+            expiresIn: '5 minutes',
+            mobile: phoneNumber
           }
         });
       }
@@ -465,8 +695,14 @@ class AuthController {
 
       // Clear OTP
       user.otp = undefined;
+      
+      // Mark mobile as verified
+      // For registration flow (inactive user), set isVerified = true so registration can proceed
+      // For login flow (active user), also set isVerified = true
       user.isVerified = true;
       await user.save();
+      
+      console.log('Mobile number verified for user:', user._id, 'isActive:', user.isActive);
 
       // Generate tokens
       const token = generateToken(user._id);

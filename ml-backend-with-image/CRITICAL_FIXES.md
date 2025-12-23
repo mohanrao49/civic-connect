@@ -65,10 +65,10 @@ CORS Configuration:
 ```
 
 Then test:
-1. `GET https://civic-connect-ml.onrender.com/health`
+1. `GET ${ML_BASE_URL}/health`
    - Should return: `{"status": "healthy", "ml_available": true/false}`
 
-2. `POST https://civic-connect-ml.onrender.com/submit`
+2. `POST ${ML_BASE_URL}/submit`
    - Should return valid JSON response (even if ML unavailable)
 
 ## 🐛 If Still Getting 502:

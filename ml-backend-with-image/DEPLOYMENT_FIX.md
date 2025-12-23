@@ -62,19 +62,19 @@ After deployment, test these endpoints:
 
 1. **Health Check**: 
    ```
-   GET https://civic-connect-ml.onrender.com/health
+   GET ${ML_BASE_URL}/health
    ```
    Should return: `{"status": "healthy", "service": "ML Backend"}`
 
 2. **Root Endpoint**:
    ```
-   GET https://civic-connect-ml.onrender.com/
+   GET ${ML_BASE_URL}/
    ```
    Should return: `{"status": "ML API running", "version": "1.0.0"}`
 
 3. **CORS Test** (from browser console on your frontend):
    ```javascript
-   fetch('https://civic-connect-ml.onrender.com/health', {
+   fetch('${ML_BASE_URL}/health', {
      method: 'GET',
      headers: {'Content-Type': 'application/json'}
    }).then(r => r.json()).then(console.log)

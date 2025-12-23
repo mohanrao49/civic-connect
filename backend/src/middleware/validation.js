@@ -80,12 +80,43 @@ const validateOTPRequest = [
   
   body('mobile')
     .optional()
-    .isMobilePhone('en-IN')
-    .withMessage('Please provide a valid Indian mobile number'),
+    .matches(/^[0-9]{10}$/)
+    .withMessage('Please provide a valid 10-digit mobile number'),
+  
+  body('isRegistration')
+    .optional()
+    .custom((value) => {
+      // Accept boolean, string "true"/"false", or any truthy value
+      if (typeof value === 'boolean') return true;
+      if (typeof value === 'string' && (value === 'true' || value === 'false')) return true;
+      return true; // Allow any value for flexibility
+    })
+    .withMessage('isRegistration must be a boolean'),
+  
+  body('name')
+    .optional()
+    .isString()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  
+  body('password')
+    .optional()
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+  
+  body('address')
+    .optional()
+    .isString()
+    .withMessage('Address must be a string'),
+  
+  body('coordinates')
+    .optional()
+    .isArray()
+    .withMessage('Coordinates must be an array'),
   
   body().custom((body) => {
-    if (!body.aadhaarNumber && !body.mobile) {
-      throw new Error('Aadhaar number or mobile number is required');
+    if (!body.aadhaarNumber && !body.mobile && !body.email) {
+      throw new Error('Aadhaar number, mobile number, or email is required');
     }
     return true;
   }),

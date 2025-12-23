@@ -33,22 +33,102 @@ class ApiService {
   }
 
   // ================= FILE UPLOADS =================
-  async uploadImage(file) {
+  async uploadImage(file, timeoutMs = 60000, retries = 2) {
+    // Validate file size (10MB default limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      throw new Error(`File size exceeds 10MB limit. Current size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    }
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error(`File type not allowed. Allowed types: ${allowedTypes.join(', ')}`);
+    }
+
     const formData = new FormData();
     formData.append('image', file);
 
-    const headers = {};
-    const token = localStorage.getItem('civicconnect_token');
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
+    // Retry logic for network errors
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (attempt > 0) {
+          // Exponential backoff: wait 1s, 2s, 4s
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+          console.log(`Image upload retry attempt ${attempt}, waiting ${backoffMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
+
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+          const headers = {};
+          const token = localStorage.getItem('civicconnect_token');
+          if (token) {
+            headers.Authorization = `Bearer ${token}`;
+          }
+          // DO NOT set Content-Type - browser sets it automatically with boundary for FormData
+
+          const response = await fetch(`${this.baseURL}/upload/image`, {
+            method: 'POST',
+            headers,
+            body: formData,
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+          return await this.handleResponse(response);
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          
+          // Handle abort/timeout errors
+          if (fetchError.name === 'AbortError') {
+            if (attempt < retries) {
+              console.warn(`Image upload timeout on attempt ${attempt + 1}, retrying...`);
+              continue;
+            }
+            throw new Error('Upload timeout. Please try again or use a smaller image.');
+          }
+
+          // Handle network errors (including HTTP/2 protocol errors)
+          if (fetchError.message.includes('Failed to fetch') || 
+              fetchError.message.includes('NetworkError') ||
+              fetchError.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+            if (attempt < retries) {
+              console.warn(`Image upload network error on attempt ${attempt + 1}, retrying...`);
+              continue;
+            }
+            throw new Error('Network error during upload. Please check your connection and try again.');
+          }
+
+          // Re-throw other errors
+          throw fetchError;
+        }
+      } catch (error) {
+        // If this is the last attempt, throw the error
+        if (attempt === retries) {
+          // Provide user-friendly error messages
+          if (error.message.includes('timeout')) {
+            throw new Error('Upload timeout. The image may be too large or your connection is slow.');
+          } else if (error.message.includes('Network') || error.message.includes('fetch')) {
+            throw new Error('Network error. Please check your internet connection and try again.');
+          } else if (error.message.includes('File size')) {
+            throw error; // Already user-friendly
+          } else if (error.message.includes('File type')) {
+            throw error; // Already user-friendly
+          } else {
+            throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
+          }
+        }
+        // Otherwise, continue to next retry
+        continue;
+      }
     }
 
-    const response = await fetch(`${this.baseURL}/upload/image`, {
-      method: 'POST',
-      headers,
-      body: formData
-    });
-    return this.handleResponse(response);
+    // Should not reach here, but just in case
+    throw new Error('Upload failed after all retry attempts');
   }
 
   // ================= ML VALIDATION =================
@@ -188,6 +268,86 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // New methods for mobile-based registration
+  async sendOtpToMobile(mobile, isRegistration = false) {
+    const response = await fetch(`${this.baseURL}/auth/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile, isRegistration })
+    });
+    return this.handleResponse(response);
+  }
+
+  // Send OTP to mobile for registration (mobile verification only)
+  // Uses separate endpoint that doesn't check for user existence
+  async sendOtpToMobileForRegistration(mobile) {
+    const response = await fetch(`${this.baseURL}/auth/send-otp-for-registration`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile })
+    });
+    return this.handleResponse(response);
+  }
+
+  // Verify OTP for registration
+  // Uses separate endpoint that works with temporary inactive users
+  async verifyOtpForRegistration(mobile, otp) {
+    const response = await fetch(`${this.baseURL}/auth/verify-otp-for-registration`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile, otp })
+    });
+    return this.handleResponse(response);
+  }
+
+  async sendOtpForRegistration(mobile, name, aadhaarNumber, address, coordinates, password) {
+    // Use existing /send-otp endpoint with isRegistration flag
+    const response = await fetch(`${this.baseURL}/auth/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        mobile, 
+        name, 
+        aadhaarNumber, 
+        address, 
+        coordinates, 
+        password,
+        isRegistration: true 
+      })
+    });
+    return this.handleResponse(response);
+  }
+
+  async registerUserWithPassword({ name, aadhaarNumber, mobile, address, coordinates, password }) {
+    // OTP already verified in previous step, so we don't need to send it again
+    const response = await fetch(`${this.baseURL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, aadhaarNumber, mobile, address, coordinates, password })
+    });
+    return this.handleResponse(response);
+  }
+
+  // New method for Aadhaar + password login
+  async loginWithAadhaar(aadhaarNumber, password) {
+    const response = await fetch(`${this.baseURL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aadhaarNumber, password })
+    });
+    return this.handleResponse(response);
+  }
+
+  // Keep mobile login for backward compatibility
+  async loginWithMobile(mobile, password) {
+    const response = await fetch(`${this.baseURL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile, password })
+    });
+    return this.handleResponse(response);
+  }
+
   async guestLogin(name) {
     const response = await fetch(`${this.baseURL}/auth/guest`, {
       method: 'POST',
@@ -197,6 +357,7 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // Keep old registerUser for backward compatibility (if needed)
   async registerUser({ name, aadhaarNumber, mobile, address }) {
     const response = await fetch(`${this.baseURL}/auth/register`, {
       method: 'POST',
