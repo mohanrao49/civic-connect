@@ -446,16 +446,27 @@ class AuthController {
       // In dev mode, OTP is logged to server console only
       if (smsResult.devMode) {
         console.log(`[DEV MODE] OTP for ${mobile}: ${otp} - Check server logs`);
+        console.log('[IMPORTANT] SMS service is not configured. OTP is only in server logs.');
+        console.log('[SETUP] To send real SMS, configure SMS_PROVIDER and credentials. See SMS_SETUP.md');
+        // Still return success in dev mode so user can test the flow
+        return res.json({
+          success: true,
+          message: `OTP has been sent to ${mobile}. Please check your phone.`,
+          data: {
+            expiresIn: '5 minutes',
+            mobile: mobile,
+            note: 'SMS service not configured - check server logs for OTP in dev mode'
+          }
+        });
       }
 
-      // Always return success message without OTP
-      // If SMS failed, still don't return OTP - user should check their phone or contact support
-      if (!smsResult.success && !smsResult.devMode) {
+      // If SMS failed (and not dev mode), return error
+      if (!smsResult.success) {
         console.error('SMS sending failed:', smsResult.error);
         return res.status(500).json({
           success: false,
           message: 'Failed to send OTP. Please try again or contact support.',
-          error: 'SMS service unavailable'
+          error: smsResult.error || 'SMS service unavailable'
         });
       }
       

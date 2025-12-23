@@ -40,6 +40,8 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
     "socket.io": "^4.7.4",
+    "twilio": "^4.19.0",
+    "aws-sdk": "^2.1509.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
