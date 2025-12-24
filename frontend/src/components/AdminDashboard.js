@@ -191,7 +191,8 @@ const AdminDashboard = ({ user }) => {
           gap: '0.5rem',
           marginBottom: '2rem',
           borderBottom: '1px solid #e2e8f0',
-          paddingBottom: '1rem'
+          paddingBottom: '1rem',
+          overflow: 'auto',
         }}>
           {[
             { key: 'overview', label: 'Overview', icon: BarChart3 },
@@ -370,7 +371,7 @@ const AdminDashboard = ({ user }) => {
               marginBottom: '1.5rem',
               gap: '1rem'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem',overflow: 'auto'}}>
                 <div style={{ position: 'relative' }}>
                   <Search 
                     size={16} 
@@ -462,7 +463,8 @@ const AdminDashboard = ({ user }) => {
               background: 'white',
               borderRadius: '12px',
               overflow: 'hidden',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              overflow: 'auto',
             }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -885,9 +887,9 @@ const EmployeeManagement = () => {
         background: 'white',
         borderRadius: '12px',
         overflow: 'hidden',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
       }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>

@@ -19,20 +19,32 @@ npm install twilio
 ### Step 2: Get Twilio Credentials
 1. Sign up at [Twilio](https://www.twilio.com/try-twilio)
 2. Get your credentials from the Twilio Console:
-   - Account SID
-   - Auth Token
-   - Phone Number (from Twilio)
+   - **Account SID** (starts with "AC...")
+   - **Auth Token** (click "show" to reveal)
+   - **Twilio Phone Number** ⚠️ **IMPORTANT**: This must be a phone number you get FROM Twilio, NOT your personal number!
+
+3. **Get a Twilio Phone Number**:
+   - Go to Twilio Console → Phone Numbers → Manage → Buy a number
+   - Or use the free trial number (if available)
+   - This number will be used as the "FROM" number when sending SMS
+   - Your personal number is where you RECEIVE the OTP (the "TO" number)
 
 ### Step 3: Set Environment Variables
 Add these to your `.env` file or Render environment variables:
 
 ```env
 SMS_PROVIDER=twilio
-TWILIO_ACCOUNT_SID=your_account_sid_here
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
 TWILIO_PHONE_NUMBER=+1234567890
 SMS_COUNTRY_CODE=91
 ```
+
+**⚠️ CRITICAL**: 
+- `TWILIO_PHONE_NUMBER` must be a **Twilio phone number** (from Twilio Console)
+- **NOT** your personal phone number
+- This is the number that will **send** SMS (FROM number)
+- Users will receive SMS **from** this Twilio number **to** their personal numbers
 
 ### Step 4: Deploy
 After setting environment variables, redeploy your backend.

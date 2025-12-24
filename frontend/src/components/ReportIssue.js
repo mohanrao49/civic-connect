@@ -187,12 +187,29 @@ const ReportIssue = ({ user }) => {
       
       // Upload image if selected
       if (selectedFile) {
-        const uploadResponse = await apiService.uploadImage(selectedFile);
-        // Support both our backend shape { success, data: { url, publicId } }
-        // and any direct shape { url, secure_url, public_id }
-        const uploaded = uploadResponse?.data || uploadResponse || {};
-        imageUrl = uploaded.url || uploaded.secure_url || null;
-        var uploadedPublicId = uploaded.publicId || uploaded.public_id || null;
+        try {
+          const uploadResponse = await apiService.uploadImage(selectedFile);
+          // Support both our backend shape { success, data: { url, publicId } }
+          // and any direct shape { url, secure_url, public_id }
+          const uploaded = uploadResponse?.data || uploadResponse || {};
+          imageUrl = uploaded.url || uploaded.secure_url || null;
+          var uploadedPublicId = uploaded.publicId || uploaded.public_id || null;
+          
+          if (!imageUrl) {
+            console.warn('Image upload succeeded but no URL returned:', uploadResponse);
+            toast.warning('Image uploaded but URL not received. Continuing without image.');
+          } else {
+            console.log('Image uploaded successfully:', imageUrl);
+          }
+        } catch (uploadError) {
+          // Handle upload errors - allow user to continue without image
+          console.error('Image upload error:', uploadError);
+          const errorMessage = uploadError.message || 'Failed to upload image';
+          
+          // Show error but allow submission to continue without image
+          toast.warning(`${errorMessage}. Continuing without image.`);
+          imageUrl = null; // Ensure imageUrl is null if upload failed
+        }
       }
 
       // Validate required fields
