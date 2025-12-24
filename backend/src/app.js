@@ -112,19 +112,6 @@ if (enableRateLimit) {
   });
   app.use('/api/', limiter);
 
-  // Stricter limiter for OTP endpoints to avoid SMS/OTP abuse while keeping general traffic freer
-  const otpLimiter = rateLimit({
-    windowMs: parseInt(process.env.OTP_RATE_LIMIT_WINDOW_MS, 10) || 10 * 60 * 1000, // default: 10 minutes
-    max: parseInt(process.env.OTP_RATE_LIMIT_MAX, 10) || 10, // default: 10 OTP requests per window per IP
-    message: {
-      success: false,
-      message: 'Too many OTP requests, please try again later.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-  app.use('/api/auth/send-otp', otpLimiter);
-  app.use('/api/auth/send-otp-for-registration', otpLimiter);
 }
 
 // Body parsing middleware

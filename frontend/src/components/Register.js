@@ -2,15 +2,12 @@ import React, { useState, useContext } from 'react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { LanguageContext } from '../App';
-import { ArrowLeft, Phone, Key, Lock, MapPin } from 'lucide-react';
+import { ArrowLeft, Lock, MapPin } from 'lucide-react';
 import apiService from '../services/api';
 
 const Register = () => {
   const navigate = useNavigate();
   const { t } = useContext(LanguageContext);
-
-  // Step management
-  const [step, setStep] = useState(1); // 1: Mobile, 2: Verify OTP, 3: Details + Password + Register
 
   // Form data
   const [name, setName] = useState('');
@@ -18,15 +15,11 @@ const Register = () => {
   const [mobile, setMobile] = useState('');
   const [address, setAddress] = useState('');
   const [coordinates, setCoordinates] = useState(null);
-  const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isMobileVerified, setIsMobileVerified] = useState(false);
   
   // State management
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOtpSent, setIsOtpSent] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleUseMyLocation = async () => {
     if (!navigator.geolocation) {
@@ -53,59 +46,17 @@ const Register = () => {
     });
   };
 
-  // Step 1: Send OTP to mobile number
-  const handleSendOtp = async (e) => {
-    e.preventDefault();
-    if (mobile.length !== 10) {
-      toast.warning('Please enter a valid 10-digit mobile number');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Send OTP for mobile verification (registration flow)
-      await apiService.sendOtpToMobileForRegistration(mobile);
-      setIsOtpSent(true);
-      setStep(2); // Move to OTP verification step
-      
-      // OTP is sent via SMS - never displayed on screen
-      toast.success(`OTP sent to ${mobile}. Please check your phone for the OTP.`);
-    } catch (error) {
-      toast.error(`Error sending OTP: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 2: Verify OTP sent to mobile
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    if (otp.length !== 6) {
-      toast.warning('Please enter a valid 6-digit OTP');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Verify OTP for mobile number
-      await apiService.verifyOtpForRegistration(mobile, otp);
-      setIsMobileVerified(true);
-      toast.success('Mobile number verified successfully');
-      setStep(3); // Move to details step
-    } catch (error) {
-      toast.error(`OTP verification failed: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 3: Collect all details and register
-  const handleCompleteRegistration = async (e) => {
+  // Handle registration
+  const handleRegister = async (e) => {
     e.preventDefault();
     
     // Validation
     if (!name.trim()) {
       toast.warning('Please enter your name');
+      return;
+    }
+    if (mobile.length !== 10) {
+      toast.warning('Please enter a valid 10-digit mobile number');
       return;
     }
     if (aadhaarNumber && aadhaarNumber.length !== 12) {
@@ -127,15 +78,14 @@ const Register = () => {
 
     setIsSubmitting(true);
     try {
-      // Register user (OTP already verified in step 2)
-      const result = await apiService.registerUserWithPassword({ 
+      // Register user directly (no OTP verification needed)
+      const result = await apiService.register({ 
         name, 
         aadhaarNumber: aadhaarNumber || undefined, 
         mobile, 
         address,
         coordinates,
         password
-        // No OTP needed - already verified
       });
       toast.success('Registered successfully');
       
@@ -163,97 +113,25 @@ const Register = () => {
   return (
     <div className="login-container">
       <div className="login-card">
+        <button 
+          onClick={() => navigate('/login')}
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            color: '#1e4359', 
+            cursor: 'pointer',
+            marginBottom: '1rem'
+          }}
+        >
+          <ArrowLeft size={20} />
+        </button>
+
         <div className="login-header">
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-            <button 
-              onClick={() => step > 1 ? setStep(step - 1) : navigate('/login')}
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                color: '#1e4359', 
-                cursor: 'pointer',
-                marginRight: '1rem'
-              }}
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <h1 className="login-title">{t('register')}</h1>
-          </div>
-          <p className="login-subtitle">
-            {step === 1 && 'Enter your mobile number'}
-            {step === 2 && 'Verify OTP sent to your mobile'}
-            {step === 3 && 'Enter your details and create password'}
-          </p>
+          <h1 className="login-title">{t('register')}</h1>
+          <p className="login-subtitle">Enter your details to create an account</p>
         </div>
 
-        {/* Step 1: Enter Mobile Number */}
-        {step === 1 && (
-          <form onSubmit={handleSendOtp} className="login-form">
-            <div className="form-group">
-              <label className="form-label">
-                <Phone size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
-                Mobile Number *
-              </label>
-              <input
-                type="tel"
-                className="form-input"
-                placeholder="10-digit mobile number"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
-                maxLength={10}
-                pattern="[0-9]{10}"
-                required
-              />
-              <small style={{ color: '#666', fontSize: '0.8rem' }}>
-                We'll send an OTP to verify your mobile number
-              </small>
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn-primary" 
-              disabled={isLoading || mobile.length !== 10}
-            >
-              {isLoading ? 'Sending OTP...' : 'Send OTP'}
-            </button>
-          </form>
-        )}
-
-        {/* Step 2: Verify OTP */}
-        {step === 2 && (
-          <form onSubmit={handleVerifyOtp} className="login-form">
-            <div className="form-group">
-              <label className="form-label">
-                <Key size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
-                Enter OTP *
-              </label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Enter 6-digit OTP"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                maxLength={6}
-                required
-              />
-              <small style={{ color: '#666', fontSize: '0.8rem' }}>
-                OTP sent to {mobile}. Please check your phone.
-              </small>
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn-primary" 
-              disabled={isLoading || otp.length !== 6}
-            >
-              {isLoading ? 'Verifying...' : 'Verify OTP'}
-            </button>
-          </form>
-        )}
-
-        {/* Step 3: Enter Details and Register */}
-        {step === 3 && (
-          <form onSubmit={handleCompleteRegistration} className="login-form">
+        <form onSubmit={handleRegister} className="login-form">
             <div className="form-group">
               <label className="form-label">Full Name *</label>
               <input
@@ -280,19 +158,17 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">
-                <Phone size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
-                Mobile Number
-              </label>
+              <label className="form-label">Mobile Number *</label>
               <input
                 type="tel"
                 className="form-input"
+                placeholder="10-digit mobile number"
                 value={mobile}
-                disabled
+                onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                maxLength={10}
+                pattern="[0-9]{10}"
+                required
               />
-              <small style={{ color: '#10b981', fontSize: '0.8rem' }}>
-                ✓ Mobile number verified
-              </small>
             </div>
 
             <div className="form-group">
@@ -355,10 +231,9 @@ const Register = () => {
               className="btn-primary" 
               disabled={isSubmitting || password.length < 6 || password !== confirmPassword}
             >
-              {isSubmitting ? 'Registering...' : 'Complete Registration'}
+              {isSubmitting ? 'Registering...' : 'Register'}
             </button>
           </form>
-        )}
       </div>
     </div>
   );

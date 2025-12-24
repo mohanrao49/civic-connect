@@ -25,6 +25,7 @@ const validateUserRegistration = [
     .withMessage('Name must be between 2 and 50 characters'),
   
   body('aadhaarNumber')
+    .optional()
     .matches(/^[0-9]{12}$/)
     .withMessage('Please provide a valid 12-digit Aadhaar number'),
   
@@ -39,7 +40,8 @@ const validateUserRegistration = [
     .withMessage('Please provide a valid 10-digit mobile number'),
   
   body('password')
-    .optional()
+    .notEmpty()
+    .withMessage('Password is required')
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters long'),
   

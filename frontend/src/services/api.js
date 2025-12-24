@@ -241,85 +241,8 @@ class ApiService {
   }
 
   // ================= AUTH =================
-  async sendOtpByAadhaar(aadhaarNumber) {
-    const response = await fetch(`${this.baseURL}/auth/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aadhaarNumber })
-    });
-    return this.handleResponse(response);
-  }
-
-  async verifyOtpByAadhaar(aadhaarNumber, otp) {
-    const response = await fetch(`${this.baseURL}/auth/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aadhaarNumber, otp })
-    });
-    return this.handleResponse(response);
-  }
-
-  async verifyOtp(mobile, otp) {
-    const response = await fetch(`${this.baseURL}/auth/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobile, otp })
-    });
-    return this.handleResponse(response);
-  }
-
-  // New methods for mobile-based registration
-  async sendOtpToMobile(mobile, isRegistration = false) {
-    const response = await fetch(`${this.baseURL}/auth/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobile, isRegistration })
-    });
-    return this.handleResponse(response);
-  }
-
-  // Send OTP to mobile for registration (mobile verification only)
-  // Uses separate endpoint that doesn't check for user existence
-  async sendOtpToMobileForRegistration(mobile) {
-    const response = await fetch(`${this.baseURL}/auth/send-otp-for-registration`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobile })
-    });
-    return this.handleResponse(response);
-  }
-
-  // Verify OTP for registration
-  // Uses separate endpoint that works with temporary inactive users
-  async verifyOtpForRegistration(mobile, otp) {
-    const response = await fetch(`${this.baseURL}/auth/verify-otp-for-registration`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobile, otp })
-    });
-    return this.handleResponse(response);
-  }
-
-  async sendOtpForRegistration(mobile, name, aadhaarNumber, address, coordinates, password) {
-    // Use existing /send-otp endpoint with isRegistration flag
-    const response = await fetch(`${this.baseURL}/auth/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        mobile, 
-        name, 
-        aadhaarNumber, 
-        address, 
-        coordinates, 
-        password,
-        isRegistration: true 
-      })
-    });
-    return this.handleResponse(response);
-  }
-
-  async registerUserWithPassword({ name, aadhaarNumber, mobile, address, coordinates, password }) {
-    // OTP already verified in previous step, so we don't need to send it again
+  // Register user (simple registration without OTP)
+  async register({ name, aadhaarNumber, mobile, address, coordinates, password }) {
     const response = await fetch(`${this.baseURL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
